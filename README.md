@@ -33,12 +33,3 @@ docker-compose -f docker/docker-compose.yml up
 | `frontend/`     | React dashboard                             |
 | `tests/`        | pytest suite                                |
 | `docker/`       | Container orchestration                     |
-
-## System Evolution
-| Version | Capability              |
-|---------|-------------------------|
-| V1      | basic RAG               |
-| V2      | planner                 |
-| V3      | multi-agent             |
-| V4      | adaptive retrieval      |
-| V5      | autonomous intelligence |
