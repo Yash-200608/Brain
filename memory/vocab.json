@@ -1,0 +1,10 @@
+{
+  "_comment": "Domain vocabulary — used for query rewrite + keyword scoring",
+  "synonyms": {
+    "ai": ["artificial intelligence", "ml", "machine learning"],
+    "doc": ["document", "documentation"],
+    "repo": ["repository", "codebase"]
+  },
+  "stopwords": ["the", "a", "an", "is", "of", "to", "in", "and", "for", "on", "with"],
+  "boost_terms": ["jarvis", "memory", "planner", "agent", "orchestrator"]
+}

@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>Jarvis Brain — Dashboard</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header>
+        <h1>🧠 Jarvis Brain</h1>
+        <span id="status" class="dot dot-ok" title="connected"></span>
+      </header>
+
+      <main>
+        <section id="chat-panel">
+          <div id="messages" aria-live="polite"></div>
+          <form id="composer">
+            <input id="prompt" name="prompt" placeholder="Ask Jarvis…" autocomplete="off" />
+            <button type="submit">Send</button>
+          </form>
+        </section>
+
+        <aside id="memory-panel">
+          <h2>Memory used</h2>
+          <ul id="memory-list"></ul>
+        </aside>
+
+        <aside id="goals-panel">
+          <h2>Goals</h2>
+          <ul id="goals-list"></ul>
+        </aside>
+      </main>
+    </div>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

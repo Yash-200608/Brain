@@ -1,0 +1,42 @@
+version: "3.9"
+
+services:
+  jarvis-api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: jarvis-brain-api
+    ports:
+      - "8000:8000"
+    environment:
+      JARVIS_OLLAMA_BASE_URL: http://ollama:11434
+      JARVIS_LOG_LEVEL: INFO
+    volumes:
+      - ../data:/app/data
+    depends_on:
+      - ollama
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: jarvis-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    restart: unless-stopped
+
+  frontend:
+    image: node:20-alpine
+    container_name: jarvis-frontend
+    working_dir: /app
+    command: ["sh", "-c", "npm install && npm run dev -- --host 0.0.0.0"]
+    ports:
+      - "5173:5173"
+    volumes:
+      - ../frontend:/app
+    depends_on:
+      - jarvis-api
+
+volumes:
+  ollama-data:

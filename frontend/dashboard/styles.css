@@ -1,0 +1,27 @@
+:root {
+  --bg: #0b0d10;
+  --fg: #e7eaee;
+  --accent: #6ee7b7;
+  --muted: #555;
+  --panel: #14181d;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font-family: system-ui, sans-serif; }
+header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 24px; border-bottom: 1px solid #222;
+}
+.dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.dot-ok { background: var(--accent); }
+.dot-bad { background: #f87171; }
+main {
+  display: grid; grid-template-columns: 1fr 320px 320px;
+  gap: 16px; padding: 16px; height: calc(100vh - 60px);
+}
+section, aside { background: var(--panel); border-radius: 8px; padding: 16px; overflow-y: auto; }
+#messages { flex: 1; overflow-y: auto; height: 80%; }
+.msg-user { color: var(--accent); margin: 8px 0; }
+.msg-jarvis { color: var(--fg); margin: 8px 0; }
+#composer { display: flex; gap: 8px; }
+#prompt { flex: 1; padding: 10px; border-radius: 6px; border: 1px solid #333; background: #1a1f25; color: var(--fg); }
+button { padding: 10px 14px; background: var(--accent); color: #000; border: 0; border-radius: 6px; cursor: pointer; }
