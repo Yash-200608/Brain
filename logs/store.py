@@ -17,6 +17,9 @@ class SessionLogStore:
 
     def _init_db(self) -> None:
         with sqlite3.connect(self.db_path) as conn:
+            # WAL: concurrent readers + single writer — matches the V2
+            # per-session-actor write pattern.
+            conn.execute("PRAGMA journal_mode=WAL")
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS sessions (

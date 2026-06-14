@@ -3,8 +3,11 @@ from __future__ import annotations
 
 import logging
 
+import requests
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+from config import settings
 
 from api.middleware.auth import AuthMiddleware
 from api.middleware.rate_limit import RateLimitMiddleware
@@ -17,7 +20,7 @@ from logs.logger import configure_logging
 configure_logging()
 logger = logging.getLogger("api")
 
-app = FastAPI(title="Jarvis Brain", version="1.0.0")
+app = FastAPI(title="Jarvis Brain", version="2.0.0-foundation")
 
 # Middleware
 app.add_middleware(
@@ -38,4 +41,11 @@ app.include_router(sessions_route.router, prefix="/api/sessions", tags=["session
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok", "components": {"api": "ok", "orchestrator": "ok"}}
+    components = {"api": "ok", "orchestrator": "ok"}
+    try:
+        r = requests.get(f"{settings.ollama_base_url}/api/tags", timeout=2)
+        components["ollama"] = "ok" if r.ok else "degraded"
+    except requests.RequestException:
+        components["ollama"] = "down"
+    status = "ok" if all(v == "ok" for v in components.values()) else "degraded"
+    return {"status": status, "components": components}

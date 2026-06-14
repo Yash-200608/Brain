@@ -23,6 +23,9 @@ class GoalStore:
 
     def _init_db(self) -> None:
         with sqlite3.connect(self.db_path) as conn:
+            # WAL: concurrent readers + single writer — matches the V2
+            # per-session-actor write pattern.
+            conn.execute("PRAGMA journal_mode=WAL")
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS goals (
@@ -84,11 +87,15 @@ class GoalStore:
         goal = self.get(goal_id)
         if not goal:
             return False
+        changed = False
         for s in goal.subtasks:
             if s.text == subtask_text and not s.done:
                 s.done = True
                 s.completed_at = time.time()
-        if all(s.done for s in goal.subtasks) and goal.subtasks:
+                changed = True
+        if not changed:
+            return False
+        if all(s.done for s in goal.subtasks):
             goal.status = GoalStatus.COMPLETE
         self.upsert(goal)
         return True

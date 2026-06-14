@@ -22,9 +22,20 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         client = request.client.host if request.client else "anon"
         now = time.time()
         with self._lock:
-            bucket = self._buckets[client]
-            self._buckets[client] = [t for t in bucket if t > now - self.per]
-            if len(self._buckets[client]) >= self.rate:
+            bucket = [t for t in self._buckets[client] if t > now - self.per]
+            self._buckets[client] = bucket
+            if len(bucket) >= self.rate:
                 return JSONResponse({"error": "rate limit exceeded"}, status_code=429)
-            self._buckets[client].append(now)
+            bucket.append(now)
+            self._prune(now)
         return await call_next(request)
+
+    def _prune(self, now: float) -> None:
+        """Drop buckets whose newest entry has aged out, so the per-IP dict
+        cannot grow without bound across many distinct clients."""
+        if len(self._buckets) <= 1024:
+            return
+        cutoff = now - self.per
+        stale = [k for k, v in self._buckets.items() if not v or v[-1] <= cutoff]
+        for k in stale:
+            del self._buckets[k]

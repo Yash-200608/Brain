@@ -11,21 +11,24 @@ logger = logging.getLogger(__name__)
 
 
 class EmbeddingProvider:
-    _model = None
+    # cache keyed by model name — providers with different models must not
+    # silently share one loaded model
+    _models: dict = {}
     _lock = threading.Lock()
 
     def __init__(self, model_name: str | None = None) -> None:
         self.model_name = model_name or settings.embedding_model
 
     def _ensure_model(self):  # noqa: ANN202
-        if EmbeddingProvider._model is not None:
-            return EmbeddingProvider._model
+        model = EmbeddingProvider._models.get(self.model_name)
+        if model is not None:
+            return model
         with EmbeddingProvider._lock:
-            if EmbeddingProvider._model is None:
+            if self.model_name not in EmbeddingProvider._models:
                 from sentence_transformers import SentenceTransformer
                 logger.info("loading embedding model: %s", self.model_name)
-                EmbeddingProvider._model = SentenceTransformer(self.model_name)
-        return EmbeddingProvider._model
+                EmbeddingProvider._models[self.model_name] = SentenceTransformer(self.model_name)
+        return EmbeddingProvider._models[self.model_name]
 
     def embed(self, texts: Sequence[str]) -> list[list[float]]:
         if not texts:

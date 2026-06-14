@@ -17,8 +17,8 @@ class MemorySearchTool(Tool):
         )
         self.retriever = retriever or MemoryRetriever()
 
-    def run(self, *, query: str, top_k: int = 8, **_: Any) -> list[dict]:
-        return self.retriever.search(query, top_k=top_k)
+    def run(self, **kwargs: Any) -> list[dict]:
+        return self.retriever.search(str(kwargs["query"]), top_k=int(kwargs.get("top_k", 8)))
 
 
 class MemoryWriteTool(Tool):
@@ -30,5 +30,5 @@ class MemoryWriteTool(Tool):
         )
         self.writer = writer or MemoryWriter()
 
-    def run(self, *, text: str, importance: float = 0.5, **_: Any) -> str:
-        return self.writer.write(text, importance=importance)
+    def run(self, **kwargs: Any) -> str:
+        return self.writer.write(str(kwargs["text"]), importance=float(kwargs.get("importance", 0.5)))

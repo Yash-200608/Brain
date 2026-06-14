@@ -1,0 +1,22 @@
+# Build-context exclusions — compose builds with context ".." (repo root)
+.git
+.gitignore
+__pycache__
+**/__pycache__
+*.py[cod]
+.mypy_cache
+.pytest_cache
+.ruff_cache
+pytest-tmp-codex
+.venv
+venv
+.env
+.env.*
+data
+*.log
+frontend/node_modules
+frontend/dist
+tests
+.idea
+.vscode
+.DS_Store

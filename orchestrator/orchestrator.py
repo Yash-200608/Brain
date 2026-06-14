@@ -1,49 +1,47 @@
-"""JarvisOrchestrator — the core engine.
+"""JarvisOrchestrator — V1-compatible facade over the Brain V2 core.
 
-Responsibilities:
-  - session locking
-  - plan → execute → critic → retry loop
-  - memory retrieval + write-back
-  - reflection trigger
+V1 semantics preserved exactly:
+  * ``handle(user_input)`` runs the cognitive loop and returns
+    ``{session_id, response, memory_used, tasks}``;
+  * passing ``session_id`` switches the "current" session and stays sticky
+    for subsequent calls that omit it (V1's single-state behavior);
+  * ``.state`` exposes the current session's state object.
+
+What changed underneath: the global lock and single ``SessionState`` are
+gone. Turns are routed through a :class:`~core.manager.SessionManager` to
+per-session actors, so distinct sessions no longer serialize each other.
+New code should use ``SessionManager`` directly; this facade exists so the
+CLI, the API, and existing integrations keep working unchanged.
 """
 from __future__ import annotations
 
-import logging
-import threading
 import uuid
-from dataclasses import dataclass, field
 from typing import Any
 
 from agents.critic import CriticAgent
-from agents.executor import ExecutorAgent
 from agents.memory_agent import MemoryAgent
 from agents.registry import WorkerRegistry
-from agents.research import ResearchAgent
 from agents.workers import build_default_registry
-from config import settings
+from core.context_optimizer import ContextOptimizer
+from core.manager import SessionManager
+from core.pipeline import CognitivePipeline
+from core.planning import Planner
+from core.routing import IntentRouter
+from core.session import SessionState
+from events import get_event_bus
 from goals.store import GoalStore
+from identity import Principal, get_identity_service
 from logs.store import SessionLogStore
 from memory.store import ChromaMemoryStore
-from orchestrator.context_optimizer import ContextOptimizer
-from orchestrator.planner import Planner
-from orchestrator.router import IntentRouter
-from orchestrator.task import Task, TaskStatus
 from reflection.reflector import Reflector
+from services import GoalService, MemoryService, SessionService
 
-logger = logging.getLogger(__name__)
-
-
-@dataclass
-class SessionState:
-    session_id: str = field(default_factory=lambda: uuid.uuid4().hex)
-    history: list[dict] = field(default_factory=list)
-    last_input: str = ""
-    last_memory: list[dict] = field(default_factory=list)
+__all__ = ["JarvisOrchestrator", "SessionState"]
 
 
 class JarvisOrchestrator:
     def __init__(self, registry: WorkerRegistry | None = None) -> None:
-        self._lock = threading.RLock()
+        # storage + agents (same construction as V1)
         self.memory_store = ChromaMemoryStore()
         self.memory_agent = MemoryAgent(self.memory_store)
         self.registry = registry or build_default_registry(self.memory_agent)
@@ -52,98 +50,53 @@ class JarvisOrchestrator:
         self.planner = Planner()
         self.critic = CriticAgent()
         self.context_opt = ContextOptimizer()
-        self.reflector = Reflector(self.memory_agent)
 
         self.goal_store = GoalStore()
         self.log_store = SessionLogStore()
 
-        self.state = SessionState()
+        # V2 foundation: services, events, pipeline, session manager
+        self.bus = get_event_bus()
+        self.identity = get_identity_service()
+        self.memory_service = MemoryService(self.memory_agent, bus=self.bus)
+        self.goal_service = GoalService(self.goal_store)
+        self.session_service = SessionService(self.log_store)
+        self.reflector = Reflector(self.memory_service)
 
-    # ----- public entrypoint -----
-    def handle(self, user_input: str) -> dict[str, Any]:
-        with self._lock:
-            return self._handle_locked(user_input)
+        self.pipeline = CognitivePipeline(
+            registry=self.registry,
+            router=self.router,
+            planner=self.planner,
+            critic=self.critic,
+            context_opt=self.context_opt,
+            reflector=self.reflector,
+            memory_service=self.memory_service,
+            goal_service=self.goal_service,
+            session_service=self.session_service,
+            bus=self.bus,
+        )
+        self.sessions = SessionManager(self.pipeline)
 
-    def _handle_locked(self, user_input: str) -> dict[str, Any]:
-        intent = self.router.classify(user_input)
-        logger.info("intent=%s memory=%s complexity=%s",
-                    intent.intent, intent.requires_memory, intent.complexity)
+        # V1 parity: a stable default session exists from construction time.
+        self._current_session_id = uuid.uuid4().hex
 
-        # 1. Retrieve memory
-        memory_results: list[dict] = []
-        if intent.requires_memory:
-            memory_results = self.memory_agent.search(user_input)
-        context = self.context_opt.build(memory_results)
+    # ----- V1-compatible surface -----
+    @property
+    def state(self) -> SessionState:
+        """State of the current (sticky) session — V1's ``self.state``."""
+        return self.sessions.get_or_create(self._current_session_id).state
 
-        # 2. Plan
-        tasks = self.planner.build(user_input, context=context)
-        if not tasks:
-            tasks = [Task(agent="executor", instruction=user_input, risk=0)]
-
-        # 3. Execute with retry
-        final_output = ""
-        for attempt in range(settings.max_retries + 1):
-            final_output = self._run_pipeline(tasks, context)
-            verdict = self.critic.review(user_input, final_output)
-            if (
-                verdict.get("verdict") == "ok"
-                and float(verdict.get("confidence", 0)) >= settings.critic_confidence_threshold
-            ):
-                break
-            logger.info("critic retry %d: %s", attempt + 1, verdict.get("reason"))
-
-        # 4. Reflect & write memory
-        self.reflector.reflect(user_input, final_output)
-
-        # 5. Log
-        self.log_store.append(self.state.session_id, user_input, final_output)
-        self.state.history.append({"input": user_input, "output": final_output})
-        self.state.last_input = user_input
-        self.state.last_memory = memory_results
-
-        return {
-            "session_id": self.state.session_id,
-            "response": final_output,
-            "memory_used": [m.get("id") for m in memory_results],
-            "tasks": [t.__dict__ for t in tasks],
-        }
-
-    # ----- internal -----
-    def _run_pipeline(self, tasks: list[Task], context: str) -> str:
-        outputs: list[str] = []
-        for t in tasks:
-            if t.risk >= 2:
-                t.status = TaskStatus.BLOCKED
-                outputs.append(f"[blocked: {t.instruction}]")
-                continue
-            agent = self.registry.get(t.agent)
-            if agent is None:
-                t.fail(f"unknown agent: {t.agent}")
-                continue
-            t.start()
-            try:
-                if isinstance(agent, ResearchAgent):
-                    out = agent.research(t.instruction, [c.get("text", "") for c in self.state.last_memory])
-                elif isinstance(agent, ExecutorAgent):
-                    out = agent.execute(t.instruction, context=context)
-                elif isinstance(agent, MemoryAgent):
-                    out = self._dispatch_memory(t.instruction)
-                else:
-                    out = agent.call(t.instruction)
-                t.complete(out)
-                outputs.append(out)
-                # feed each step's output forward as context
-                context = (context + "\n\n" + out).strip()[: self.context_opt.max_chars]
-            except Exception as e:  # noqa: BLE001
-                logger.exception("task %s failed", t.id)
-                t.fail(str(e))
-        return "\n\n".join(o for o in outputs if o).strip()
-
-    def _dispatch_memory(self, instruction: str) -> str:
-        text = (instruction or "").strip()
-        if text.upper().startswith("COMPLETE_SUBTASK"):
-            self.goal_store.complete_subtask_from_instruction(text)
-            return f"acknowledged: {text}"
-        # default: write the instruction as a memory
-        mid = self.memory_agent.write(text, importance=0.5)
-        return f"memory.written id={mid}"
+    def handle(
+        self,
+        user_input: str,
+        session_id: str | None = None,
+        principal: Principal | None = None,
+    ) -> dict[str, Any]:
+        if session_id:
+            self._current_session_id = session_id
+        if principal is None:
+            principal = self.identity.default_principal()
+        return self.sessions.handle_turn(
+            user_input,
+            session_id=self._current_session_id,
+            principal=principal,
+        )

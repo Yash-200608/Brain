@@ -20,7 +20,8 @@ class HTTPGetTool(Tool):
         )
         self.allowed_hosts = allowed_hosts or set()
 
-    def run(self, *, url: str, **_: Any) -> dict:
+    def run(self, **kwargs: Any) -> dict:
+        url = str(kwargs["url"])
         parsed = urlparse(url)
         if parsed.scheme not in ALLOWED_SCHEMES:
             raise ValueError(f"scheme {parsed.scheme} not allowed")

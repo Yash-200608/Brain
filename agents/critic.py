@@ -36,4 +36,10 @@ class CriticAgent(Agent):
         d.setdefault("confidence", 0.5)
         d.setdefault("verdict", "ok")
         d.setdefault("reason", "")
+        try:
+            d["confidence"] = max(0.0, min(1.0, float(d["confidence"])))
+        except (TypeError, ValueError):
+            d["confidence"] = 0.5
+        if d["verdict"] not in ("ok", "retry"):
+            d["verdict"] = "ok"
         return d

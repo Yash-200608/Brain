@@ -1,0 +1,12 @@
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+exclude = ["pytest-tmp-codex"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+exclude = ["pytest-tmp-codex"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -36,10 +36,17 @@ class MemoryRetriever:
             return query
         return f"{query} {prior}".strip()
 
-    def search(self, query: str, *, top_k: int | None = None, prior: str = "") -> list[dict]:
+    def search(
+        self,
+        query: str,
+        *,
+        top_k: int | None = None,
+        prior: str = "",
+        where: dict | None = None,
+    ) -> list[dict]:
         top_k = top_k or settings.memory_top_k
         rewritten = self.rewrite(query, prior)
-        candidates = self.store.query(rewritten, top_k=top_k * settings.memory_overshoot)
+        candidates = self.store.query(rewritten, top_k=top_k * settings.memory_overshoot, where=where)
         scored = [self._score(rewritten, c) for c in candidates]
         scored.sort(key=lambda r: r["score"], reverse=True)
         scored = self._dedupe(scored)[:top_k]

@@ -10,21 +10,24 @@ logger = logging.getLogger(__name__)
 
 
 class Reranker:
-    _model = None
+    # cache keyed by model name — rerankers with different models must not
+    # silently share one loaded model
+    _models: dict = {}
     _lock = threading.Lock()
 
     def __init__(self, model_name: str | None = None) -> None:
         self.model_name = model_name or settings.reranker_model
 
     def _ensure_model(self):  # noqa: ANN202
-        if Reranker._model is not None:
-            return Reranker._model
+        model = Reranker._models.get(self.model_name)
+        if model is not None:
+            return model
         with Reranker._lock:
-            if Reranker._model is None:
+            if self.model_name not in Reranker._models:
                 from sentence_transformers import CrossEncoder
                 logger.info("loading reranker: %s", self.model_name)
-                Reranker._model = CrossEncoder(self.model_name)
-        return Reranker._model
+                Reranker._models[self.model_name] = CrossEncoder(self.model_name)
+        return Reranker._models[self.model_name]
 
     def score(self, query: str, docs: list[str]) -> list[float]:
         if not docs:

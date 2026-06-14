@@ -2,17 +2,23 @@
 from __future__ import annotations
 
 import logging
+from typing import Protocol
 
-from agents.memory_agent import MemoryAgent
 from memory.extractor import MemoryExtractor
 from reflection.scorer import ImportanceScorer
 
 logger = logging.getLogger(__name__)
 
 
+class MemoryWriterLike(Protocol):
+    """Anything reflections can be written through (MemoryAgent, MemoryService)."""
+
+    def write(self, text: str, *, importance: float = 0.5, metadata: dict | None = None) -> str: ...
+
+
 class Reflector:
-    def __init__(self, memory_agent: MemoryAgent, extractor: MemoryExtractor | None = None) -> None:
-        self.memory_agent = memory_agent
+    def __init__(self, memory: MemoryWriterLike, extractor: MemoryExtractor | None = None) -> None:
+        self.memory = memory
         self.extractor = extractor or MemoryExtractor()
         self.scorer = ImportanceScorer()
 
@@ -24,7 +30,7 @@ class Reflector:
             if not text:
                 continue
             importance = max(self.scorer.score(text), float(f.get("importance", 0.0)))
-            mid = self.memory_agent.write(text, importance=importance, metadata={"source": "reflection"})
+            mid = self.memory.write(text, importance=importance, metadata={"source": "reflection"})
             if mid:
                 ids.append(mid)
         logger.info("reflection wrote %d facts", len(ids))

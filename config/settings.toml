@@ -6,9 +6,17 @@ port = 8000
 
 [llm]
 ollama_base_url = "http://localhost:11434"
+provider        = "ollama"
 planner_model   = "llama3.1:8b"
 executor_model  = "llama3.1:8b"
 critic_model    = "llama3.1:8b"
+
+[identity]
+# V2 foundation — non-enforcing. api_keys live in .env (JARVIS_API_KEYS).
+default_user_id = "owner"
+
+[sessions]
+max_sessions = 256
 
 [embeddings]
 model    = "sentence-transformers/all-MiniLM-L6-v2"

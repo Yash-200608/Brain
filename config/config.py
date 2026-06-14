@@ -9,7 +9,6 @@ import tomllib
 from pathlib import Path
 from typing import Any
 
-from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -39,9 +38,17 @@ class Settings(BaseSettings):
 
     # LLM
     ollama_base_url: str = _t("llm", "ollama_base_url", "http://localhost:11434")
+    llm_provider: str = _t("llm", "provider", "ollama")
     planner_model: str = _t("llm", "planner_model", "llama3.1:8b")
     executor_model: str = _t("llm", "executor_model", "llama3.1:8b")
     critic_model: str = _t("llm", "critic_model", "llama3.1:8b")
+
+    # Identity (V2 foundation — non-enforcing)
+    default_user_id: str = _t("identity", "default_user_id", "owner")
+    api_keys: dict[str, str] = _t("identity", "api_keys", {})
+
+    # Sessions (V2 foundation)
+    max_sessions: int = _t("sessions", "max_sessions", 256)
 
     # Embeddings
     embedding_model: str = _t("embeddings", "model", "sentence-transformers/all-MiniLM-L6-v2")

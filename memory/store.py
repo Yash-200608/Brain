@@ -1,16 +1,17 @@
 """ChromaMemoryStore — vector + metadata persistence."""
 from __future__ import annotations
 
+import json
 import logging
 import time
 import uuid
+from collections.abc import Sequence
 from typing import Any
 
 import chromadb
 from chromadb.config import Settings as ChromaSettings
 
 from config import settings
-from models.embeddings import EmbeddingProvider
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,13 @@ class ChromaMemoryStore:
     COLLECTION = "jarvis_memory"
 
     def __init__(self, path: str | None = None) -> None:
+        # Deferred import: a module-level import would trigger
+        # models/__init__ → models.classifier → agents/__init__ →
+        # agents.memory_agent → memory.store (this module, partially
+        # initialised) and crash any import path that reaches `memory`
+        # before `agents` — including the `api.server` entry point.
+        from models.embeddings import EmbeddingProvider
+
         self.client = chromadb.PersistentClient(
             path=path or settings.chroma_path,
             settings=ChromaSettings(anonymized_telemetry=False),
@@ -37,23 +45,31 @@ class ChromaMemoryStore:
             "access_count": 0,
             "last_accessed": time.time(),
         }
-        meta.update(metadata or {})
-        emb = self.embedder.embed([text])[0]
+        # Chroma metadata values must be scalar — serialise anything else.
+        for k, v in (metadata or {}).items():
+            meta[str(k)] = v if isinstance(v, (str, int, float, bool)) else json.dumps(v)
+        emb: Sequence[float] = self.embedder.embed([text])[0]
         self.collection.add(ids=[mem_id], documents=[text], metadatas=[meta], embeddings=[emb])
         return mem_id
 
     # -- reads --
-    def query(self, query: str, top_k: int = 8) -> list[dict]:
-        emb = self.embedder.embed([query])[0]
-        res = self.collection.query(query_embeddings=[emb], n_results=top_k)
+    def query(self, query: str, top_k: int = 8, *, where: dict | None = None) -> list[dict]:
+        """Vector search. ``where`` is an optional Chroma metadata filter —
+        the hook scoped (multi-user) retrieval builds on."""
+        emb: Sequence[float] = self.embedder.embed([query])[0]
+        res = self.collection.query(query_embeddings=[emb], n_results=top_k, where=where)
+        docs = (res.get("documents") or [[]])[0]
+        ids = (res.get("ids") or [[]])[0]
+        metas = (res.get("metadatas") or [[]])[0]
+        dists = (res.get("distances") or [[]])[0]
         out: list[dict] = []
-        for i, doc in enumerate(res.get("documents", [[]])[0]):
+        for i, doc in enumerate(docs):
             out.append(
                 {
-                    "id": res["ids"][0][i],
+                    "id": ids[i],
                     "text": doc,
-                    "metadata": res["metadatas"][0][i],
-                    "distance": res["distances"][0][i] if "distances" in res else 0.0,
+                    "metadata": dict(metas[i]) if i < len(metas) else {},
+                    "distance": float(dists[i]) if i < len(dists) else 0.0,
                 }
             )
         return out
@@ -62,10 +78,12 @@ class ChromaMemoryStore:
         """Mark this memory as accessed (for recency / access boost)."""
         try:
             existing = self.collection.get(ids=[mem_id], include=["metadatas"])
-            if not existing.get("metadatas"):
+            metas = existing.get("metadatas") or []
+            if not metas:
                 return
-            meta = existing["metadatas"][0] or {}
-            meta["access_count"] = int(meta.get("access_count", 0)) + 1
+            meta = dict(metas[0] or {})
+            count = meta.get("access_count", 0)
+            meta["access_count"] = (int(count) if isinstance(count, (int, float, str)) else 0) + 1
             meta["last_accessed"] = time.time()
             self.collection.update(ids=[mem_id], metadatas=[meta])
         except Exception as e:  # noqa: BLE001
@@ -75,5 +93,5 @@ class ChromaMemoryStore:
         res = self.collection.get(include=["documents", "metadatas"])
         return [
             {"id": i, "text": d, "metadata": m}
-            for i, d, m in zip(res.get("ids", []), res.get("documents", []), res.get("metadatas", []))
+            for i, d, m in zip(res.get("ids") or [], res.get("documents") or [], res.get("metadatas") or [])
         ]
