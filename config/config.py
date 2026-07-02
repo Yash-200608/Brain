@@ -35,6 +35,14 @@ class Settings(BaseSettings):
     # API
     api_host: str = _t("api", "host", "0.0.0.0")
     api_port: int = _t("api", "port", 8000)
+    # Explicit allowlist -- matches docker-compose.yml's nginx dashboard on
+    # :5173 plus common local dev origins. Wildcard ("*") is never a default;
+    # override via JARVIS_CORS_ORIGINS='["http://host:port", ...]' (JSON
+    # array, per pydantic-settings' env parsing for list fields) for other setups.
+    cors_origins: list[str] = _t("api", "cors_origins", [
+        "http://localhost:5173", "http://127.0.0.1:5173",
+        "http://localhost:8000", "http://127.0.0.1:8000",
+    ])
 
     # LLM
     ollama_base_url: str = _t("llm", "ollama_base_url", "http://localhost:11434")

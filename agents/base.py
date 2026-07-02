@@ -24,18 +24,21 @@ class Agent:
         self.system_prompt = system_prompt
 
     def call(self, prompt: str, *, temperature: float = 0.2, **kwargs: Any) -> str:
-        """Generate a completion through the model gateway (Ollama by default)."""
-        try:
-            return get_model_gateway().generate(
-                model=self.model,
-                system=self.system_prompt,
-                prompt=prompt,
-                temperature=temperature,
-                options=kwargs or None,
-            )
-        except ModelProviderError as e:
-            logger.exception("agent %s LLM call failed: %s", self.name, e)
-            return ""
+        """Generate a completion through the model gateway (Ollama by default).
+
+        Raises ``ModelProviderError`` on failure -- it does not swallow it.
+        Callers that need a specific degraded fallback (e.g. planner/critic
+        already have their own empty-output handling) catch it themselves;
+        the default ``run()`` below reports it honestly as AgentStatus.ERROR
+        rather than returning "" indistinguishable from a real empty answer.
+        """
+        return get_model_gateway().generate(
+            model=self.model,
+            system=self.system_prompt,
+            prompt=prompt,
+            temperature=temperature,
+            options=kwargs or None,
+        )
 
     async def run(self, task: Task, context: TurnContext) -> AgentResult:
         """AgentProtocol entrypoint. Default: run the instruction through the LLM.
@@ -44,7 +47,11 @@ class Agent:
         context, services). The sync ``call`` is offloaded so the event loop
         stays responsive.
         """
-        out = await asyncio.to_thread(self.call, task.instruction)
+        try:
+            out = await asyncio.to_thread(self.call, task.instruction)
+        except ModelProviderError as e:
+            logger.exception("agent %s LLM call failed: %s", self.name, e)
+            return AgentResult(status=AgentStatus.ERROR, output=f"agent {self.name} failed: {e}")
         return AgentResult(status=AgentStatus.OK, output=out)
 
     def __repr__(self) -> str:

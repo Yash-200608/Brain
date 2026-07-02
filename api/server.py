@@ -25,9 +25,9 @@ app = FastAPI(title="Jarvis Brain", version="2.0.0-foundation")
 # Middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=list(settings.cors_origins),
+    allow_methods=["GET", "POST"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 app.add_middleware(RateLimitMiddleware)
 app.add_middleware(AuthMiddleware)

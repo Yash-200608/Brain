@@ -85,11 +85,14 @@ def test_ollama_provider_request_shape(monkeypatch):
     assert captured["timeout"] == 120
 
 
-def test_agent_call_returns_empty_on_provider_error():
-    """V1 compat: a failed LLM call yields '' — never an exception."""
+def test_agent_call_raises_on_provider_error():
+    """call() reports failure honestly -- it must not return '' indistinguishable
+    from a real empty answer. Callers (base.run, executor.run, research.run,
+    critic.review, planner.plan) each decide their own degraded fallback."""
     set_model_gateway(ModelGateway({"fake": FakeProvider(fail=True)}, default="fake"))
     agent = ExecutorAgent()
-    assert agent.call("hello") == ""
+    with pytest.raises(ModelProviderError):
+        agent.call("hello")
 
 
 def test_agent_call_passes_through_gateway():

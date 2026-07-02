@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from agents.base import Agent
 from agents.protocol import AgentResult, AgentStatus
 from config import settings
+from modelgw import ModelProviderError
 
 if TYPE_CHECKING:
     from core.context import TurnContext
@@ -29,5 +30,8 @@ class ResearchAgent(Agent):
 
     async def run(self, task: Task, context: TurnContext) -> AgentResult:
         chunks = [c.get("text", "") for c in context.memory_results]
-        out = await asyncio.to_thread(self.research, task.instruction, chunks)
+        try:
+            out = await asyncio.to_thread(self.research, task.instruction, chunks)
+        except ModelProviderError as e:
+            return AgentResult(status=AgentStatus.ERROR, output=f"research failed: {e}")
         return AgentResult(status=AgentStatus.OK, output=out)

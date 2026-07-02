@@ -20,6 +20,7 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING, Any
 
+from agents.protocol import AgentStatus
 from config import settings
 from core.context import TurnContext
 from core.context_optimizer import ContextOptimizer
@@ -178,6 +179,19 @@ class CognitivePipeline:
             )
             try:
                 result = await agent.run(t, ctx)
+                if result.status == AgentStatus.ERROR:
+                    t.fail(result.output or f"agent {t.agent} reported an error")
+                    await self._emit(TaskFailed(
+                        session_id=session_id, task_id=t.id, agent=t.agent, reason=t.output,
+                    ))
+                    continue
+                if result.status == AgentStatus.BLOCKED:
+                    t.status = TaskStatus.BLOCKED
+                    outputs.append(f"[blocked: {t.instruction}]")
+                    await self._emit(TaskBlocked(
+                        session_id=session_id, task_id=t.id, agent=t.agent, instruction=t.instruction,
+                    ))
+                    continue
                 out = result.output
                 t.complete(out)
                 outputs.append(out)

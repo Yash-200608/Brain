@@ -38,13 +38,23 @@ def apply_scope(
     origin: str | None = None,
     trust_level: str = TRUST_STANDARD,
 ) -> dict[str, Any]:
-    """Merge scope fields into ``metadata`` without clobbering explicit values."""
-    meta = dict(metadata or {})
-    meta.setdefault("user_id", user_id)
-    meta.setdefault("visibility", visibility)
+    """Merge scope fields into ``metadata``, authoritatively.
+
+    Scope fields are assigned exclusively by the server-side caller of this
+    function (derived from the verified ``principal``, never from a request
+    body) and unconditionally overwrite any same-named keys already present
+    in ``metadata``. A caller-supplied ``metadata={"user_id": "someone-else",
+    "visibility": "global", "trust_level": "high"}`` must not be able to
+    spoof scope by pre-populating these keys -- Ecosystem Architecture
+    Section 6.4: authorization-relevant fields are never merged, defaulted,
+    or coalesced from client input.
+    """
+    meta = {k: v for k, v in (metadata or {}).items() if k not in SCOPE_FIELDS}
+    meta["user_id"] = user_id
+    meta["visibility"] = visibility
     if session_id is not None:
-        meta.setdefault("session_id", session_id)
+        meta["session_id"] = session_id
     if origin is not None:
-        meta.setdefault("origin", origin)
-    meta.setdefault("trust_level", trust_level)
+        meta["origin"] = origin
+    meta["trust_level"] = trust_level
     return meta

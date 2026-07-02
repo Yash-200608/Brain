@@ -7,6 +7,7 @@ import re
 
 from agents.base import Agent
 from config import settings
+from modelgw import ModelProviderError
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,14 @@ class PlannerAgent(Agent):
 
     def plan(self, query: str, context: str = "") -> list[dict]:
         prompt = f"User query: {query}\n\nContext:\n{context}\n\nRespond with the JSON plan."
-        raw = self.call(prompt, temperature=0.1)
+        try:
+            raw = self.call(prompt, temperature=0.1)
+        except ModelProviderError as e:
+            # Same fallback as unparseable output ([] -> run_turn's single
+            # default executor task) but logged as a real model failure
+            # instead of silently indistinguishable from "no plan needed".
+            logger.warning("planner: model call failed: %s", e)
+            return []
         return self._parse(raw)
 
     def _parse(self, raw: str) -> list[dict]:

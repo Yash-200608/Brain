@@ -39,14 +39,18 @@ def test_write_defaults_to_owner_without_principal():
     assert "origin" not in meta
 
 
-def test_write_does_not_clobber_explicit_metadata():
+def test_write_does_not_clobber_non_scope_metadata():
     agent = FakeMemoryAgent()
     svc = MemoryService(agent)  # type: ignore[arg-type]
     svc.write("x", metadata={"user_id": "explicit", "source": "reflection"},
               principal=Principal(user_id="alice"))
     meta = agent.writes[0]["metadata"]
-    assert meta["user_id"] == "explicit"
+    # Non-scope fields pass through untouched...
     assert meta["source"] == "reflection"
+    # ...but scope fields are authority-assigned (from the verified principal),
+    # never accepted from caller-supplied metadata -- a caller cannot spoof
+    # user_id by pre-populating it (Ecosystem Architecture Section 6.4).
+    assert meta["user_id"] == "alice"
 
 
 def test_write_emits_memory_written_event():

@@ -2,6 +2,7 @@ import asyncio
 import tempfile
 
 from agents import AgentProtocol, AgentResult, AgentStatus
+from agents.base import Agent
 from agents.executor import ExecutorAgent
 from agents.memory_agent import MemoryAgent
 from agents.research import ResearchAgent
@@ -9,7 +10,7 @@ from core.context import TurnContext
 from core.task import Task
 from goals.models import Goal, Subtask
 from goals.store import GoalStore
-from modelgw import ModelGateway, ModelProvider, set_model_gateway
+from modelgw import ModelGateway, ModelProvider, ModelProviderError, set_model_gateway
 from services import GoalService
 
 
@@ -18,6 +19,17 @@ class EchoProvider(ModelProvider):
 
     def generate(self, *, model, system, prompt, temperature=0.2, options=None) -> str:
         return f"echo:{prompt}"
+
+
+class FailingProvider(ModelProvider):
+    name = "failing"
+
+    def generate(self, *, model, system, prompt, temperature=0.2, options=None) -> str:
+        raise ModelProviderError("backend unreachable")
+
+
+def _with_failing_gateway():
+    set_model_gateway(ModelGateway({"failing": FailingProvider()}, default="failing"))
 
 
 class RecordingMemoryService:
@@ -112,3 +124,37 @@ def test_agent_result_defaults():
     assert r.output == ""
     assert r.metadata == {}
     assert r.events == []
+
+
+def test_base_agent_run_reports_error_status_on_provider_failure():
+    """The core regression: a swallowed ModelProviderError must never look
+    like a successful empty answer to the pipeline. AgentStatus.ERROR must
+    actually be constructed and returned, not just defined and unused."""
+    _with_failing_gateway()
+    agent = Agent("generic", "m", "s")
+    task = Task(agent="generic", instruction="do something")
+    ctx = TurnContext()
+    result = asyncio.run(agent.run(task, ctx))
+    assert result.status == AgentStatus.ERROR
+    assert "generic" in result.output
+    assert "backend unreachable" in result.output
+
+
+def test_executor_run_reports_error_status_on_provider_failure():
+    _with_failing_gateway()
+    agent = ExecutorAgent()
+    task = Task(agent="executor", instruction="do the thing")
+    ctx = TurnContext(working_context="CTX")
+    result = asyncio.run(agent.run(task, ctx))
+    assert result.status == AgentStatus.ERROR
+    assert "executor" in result.output
+
+
+def test_research_run_reports_error_status_on_provider_failure():
+    _with_failing_gateway()
+    agent = ResearchAgent()
+    task = Task(agent="research", instruction="find facts")
+    ctx = TurnContext(memory_results=[{"text": "fact-alpha"}])
+    result = asyncio.run(agent.run(task, ctx))
+    assert result.status == AgentStatus.ERROR
+    assert "research" in result.output

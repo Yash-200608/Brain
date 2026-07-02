@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from agents.base import Agent
 from agents.protocol import AgentResult, AgentStatus
 from config import settings
+from modelgw import ModelProviderError
 
 if TYPE_CHECKING:
     from core.context import TurnContext
@@ -26,5 +27,8 @@ class ExecutorAgent(Agent):
         return self.call(prompt, temperature=0.3)
 
     async def run(self, task: Task, context: TurnContext) -> AgentResult:
-        out = await asyncio.to_thread(self.execute, task.instruction, context.working_context)
+        try:
+            out = await asyncio.to_thread(self.execute, task.instruction, context.working_context)
+        except ModelProviderError as e:
+            return AgentResult(status=AgentStatus.ERROR, output=f"executor failed: {e}")
         return AgentResult(status=AgentStatus.OK, output=out)

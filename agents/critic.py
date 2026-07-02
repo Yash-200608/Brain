@@ -6,6 +6,7 @@ import re
 
 from agents.base import Agent
 from config import settings
+from modelgw import ModelProviderError
 
 CRITIC_SYSTEM = """You are the critic. Evaluate whether the executor's output
 satisfies the user's intent.
@@ -21,7 +22,13 @@ class CriticAgent(Agent):
 
     def review(self, query: str, output: str) -> dict:
         prompt = f"User query: {query}\n\nOutput:\n{output}"
-        raw = self.call(prompt, temperature=0.0)
+        try:
+            raw = self.call(prompt, temperature=0.0)
+        except ModelProviderError as e:
+            # Same degraded shape _parse() already falls back to on
+            # unparseable output -- but with the real reason surfaced,
+            # not silently indistinguishable from "the critic said ok".
+            return {"confidence": 0.5, "verdict": "ok", "reason": f"critic model call failed: {e}"}
         return self._parse(raw)
 
     @staticmethod
