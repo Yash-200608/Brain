@@ -69,3 +69,74 @@ def test_health_path_is_exempt_even_without_credentials():
     mw = AuthMiddleware(None)
     response = asyncio.run(mw.dispatch(_request(path="/health", auth=None), health_handler))
     assert response.status_code == 200
+
+
+def test_options_preflight_is_exempt_even_without_credentials():
+    """CORS preflight (OPTIONS) never carries credentials by browser design.
+    AuthMiddleware sits outside CORSMiddleware in the stack (api/server.py),
+    so an unexempted preflight is rejected here before CORSMiddleware ever
+    gets to answer it -- the browser then blocks the real request even with
+    a valid key. This is not a route handler reachable from outside; CORS
+    preflight is answered entirely by CORSMiddleware, never by application
+    code, so exempting it here does not weaken auth on any real request."""
+    async def unreachable(request: Request) -> PlainTextResponse:
+        return PlainTextResponse("should not be called by this test")
+
+    set_identity_service(IdentityService(api_keys={}))
+    mw = AuthMiddleware(None)
+    scope = {
+        "type": "http", "method": "OPTIONS", "path": "/api/goals/",
+        "headers": [
+            (b"origin", b"http://localhost:5173"),
+            (b"access-control-request-method", b"GET"),
+        ],
+        "client": ("1.2.3.4", 1234),
+    }
+    response = asyncio.run(mw.dispatch(Request(scope), unreachable))
+    assert response.status_code == 200
+
+
+def _full_app_client(api_keys: dict[str, str]):
+    """Build a real TestClient against the actual FastAPI app -- not just
+    AuthMiddleware in isolation -- because the preflight bug this file
+    guards against was specifically a middleware-*interaction* bug that
+    isolated dispatch() tests could not catch.
+
+    Note: config.settings is built once at import time (see conftest.py's
+    own warning), so JARVIS_API_KEYS set here would arrive too late to take
+    effect. Inject the IdentityService directly instead -- the same pattern
+    every other test in this file already uses.
+    """
+    set_identity_service(IdentityService(api_keys=api_keys))
+    from starlette.testclient import TestClient
+    from api.server import app
+    return TestClient(app)
+
+
+def test_full_app_cross_origin_authenticated_flow():
+    """End-to-end: a browser-like cross-origin client (the dashboard's own
+    :5173 -> :8000 topology) must be able to preflight, then complete a real
+    authenticated request and get a CORS-headered response back."""
+    client = _full_app_client({"dashboard-token": "owner"})
+    origin = "http://localhost:5173"
+
+    preflight = client.options(
+        "/api/goals/",
+        headers={
+            "Origin": origin,
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "authorization,content-type",
+        },
+    )
+    assert preflight.status_code == 200
+    assert preflight.headers.get("access-control-allow-origin") == origin
+
+    unauthenticated = client.get("/api/goals/", headers={"Origin": origin})
+    assert unauthenticated.status_code == 401
+
+    authenticated = client.get(
+        "/api/goals/",
+        headers={"Origin": origin, "Authorization": "Bearer dashboard-token"},
+    )
+    assert authenticated.status_code == 200
+    assert authenticated.headers.get("access-control-allow-origin") == origin

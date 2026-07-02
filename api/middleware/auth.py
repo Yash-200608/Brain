@@ -11,6 +11,14 @@ This governs the HTTP API surface only. In-process callers (the CLI, calling
 the orchestrator directly) never pass through this middleware and are
 unaffected. ``/health`` is exempt -- it leaks no sensitive state.
 
+CORS preflight (``OPTIONS`` with no credentials, by browser design) is also
+exempt: this middleware sits outside CORSMiddleware in the stack, so an
+unexempted preflight would be rejected here before CORSMiddleware ever gets
+to answer it, and the browser would then block the real request even with a
+valid key. Preflight never reaches a route handler either way -- CORSMiddleware
+answers it directly -- so exempting it here does not weaken auth on any real
+request, only lets the CORS negotiation itself complete.
+
 Operational note: ``settings.api_keys`` is empty by default, so until at
 least one key is configured (``JARVIS_API_KEYS`` env var) and presented by
 callers (e.g. the dashboard), every HTTP API request will be rejected. That
@@ -31,7 +39,7 @@ _EXEMPT_PATHS = frozenset({"/health"})
 
 class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        if request.url.path in _EXEMPT_PATHS:
+        if request.url.path in _EXEMPT_PATHS or request.method == "OPTIONS":
             return await call_next(request)
 
         identity = get_identity_service()
