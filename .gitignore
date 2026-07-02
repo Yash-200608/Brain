@@ -24,5 +24,4 @@ pytest-tmp-codex/
 .idea/
 .vscode/
 claude.md
-docs/
 .claude
