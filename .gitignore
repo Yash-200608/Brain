@@ -23,3 +23,6 @@ pytest-tmp-codex/
 .DS_Store
 .idea/
 .vscode/
+claude.md
+docs/
+.claude

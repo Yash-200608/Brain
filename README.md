@@ -1,4 +1,4 @@
-# 🧠 Jarvis Brain
+# 🧠 Brain
 
 > A persistent cognitive system with memory, planning, and learning.
 
