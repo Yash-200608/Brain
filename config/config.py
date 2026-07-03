@@ -81,10 +81,22 @@ class Settings(BaseSettings):
     # Storage
     goals_db: str = str(DATA_DIR / "goals.db")
     sessions_db: str = str(DATA_DIR / "sessions.db")
+    devices_db: str = str(DATA_DIR / "devices.db")
 
     # Logging
     log_level: str = _t("logging", "level", "INFO")
     log_dir: str = str(DATA_DIR / "logs")
+
+    # MQTT (Priority #3 Milestone 2 -- dormant by default)
+    mqtt_enabled: bool = _t("mqtt", "enabled", False)
+    mqtt_host: str = _t("mqtt", "host", "127.0.0.1")
+    mqtt_port: int = _t("mqtt", "port", 1883)
+    mqtt_client_id: str = _t("mqtt", "client_id", "brain")
+    mqtt_keepalive: int = _t("mqtt", "keepalive", 30)
+    mqtt_qos: int = _t("mqtt", "qos", 1)
+    mqtt_username: str | None = _t("mqtt", "username", None)
+    mqtt_password: str | None = _t("mqtt", "password", None)
+    mqtt_hmac_key: str | None = _t("mqtt", "hmac_key", None)
 
 
 settings = Settings()

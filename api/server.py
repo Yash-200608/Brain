@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from contextlib import asynccontextmanager
 
 import requests
 from fastapi import FastAPI, Request
@@ -17,11 +18,53 @@ from api.routes import memory as memory_route
 from api.routes import query as query_route
 from api.routes import sessions as sessions_route
 from logs.logger import configure_logging
+from mqtt import get_mqtt_client
 
 configure_logging()
 logger = logging.getLogger("api")
 
-app = FastAPI(title="Jarvis Brain", version="2.0.0-foundation")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Starts Brain's MQTT client only when settings.mqtt_enabled is true.
+
+    Default (mqtt_enabled=False): a true no-op -- no task spawned, no
+    connection attempted. Priority #3 Milestone 2 gives Brain the
+    capability to speak MQTT; Milestone 5 adds its first real consumer --
+    when enabled AND settings.mqtt_hmac_key is set, subscribes to
+    chimera/+/presence and records inbound presence into DeviceStore. If
+    mqtt_enabled is true but no HMAC key is configured, the client still
+    starts (other future subscribers may not need signing) but the
+    presence subscription is skipped with a warning, rather than
+    subscribing a handler that can structurally never verify anything.
+    """
+    mqtt_client = None
+    if settings.mqtt_enabled:
+        logger.info("mqtt enabled -- starting background client")
+        mqtt_client = get_mqtt_client()
+        await mqtt_client.start()
+
+        if settings.mqtt_hmac_key:
+            from devices.store import DeviceStore
+            from mqtt.presence import make_presence_handler
+
+            device_store = DeviceStore()
+            await mqtt_client.subscribe(
+                "chimera/+/presence",
+                make_presence_handler(device_store, settings.mqtt_hmac_key),
+            )
+        else:
+            logger.warning(
+                "mqtt_hmac_key not set -- skipping chimera/+/presence subscription"
+            )
+    else:
+        logger.debug("mqtt disabled -- lifespan is a no-op")
+    yield
+    if mqtt_client is not None:
+        await mqtt_client.stop()
+
+
+app = FastAPI(title="Jarvis Brain", version="2.0.0-foundation", lifespan=lifespan)
 
 # Middleware
 app.add_middleware(

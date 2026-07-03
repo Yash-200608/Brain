@@ -45,3 +45,14 @@ max_retries          = 2
 
 [logging]
 level = "INFO"
+
+[mqtt]
+# Priority #3 Milestone 2 -- dormant by default. No credentials here;
+# username/password come from .env only (JARVIS_MQTT_USERNAME/JARVIS_MQTT_PASSWORD).
+# hmac_key comes from .env only (JARVIS_MQTT_HMAC_KEY) -- never written here.
+enabled     = false
+host        = "127.0.0.1"
+port        = 1883
+client_id   = "brain"
+keepalive   = 30
+qos         = 1
