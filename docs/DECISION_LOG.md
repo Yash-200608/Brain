@@ -168,3 +168,53 @@ Sequenced as the table above; no component is deleted or tagged by this ADR itse
 
 ### Future Reconsideration Criteria
 Revisit the `awesome_chat.py`/`bridge_server.py` retirement timeline once Priority #4's keystone demo has an actual trial-period outcome (success/failure data), not speculatively.
+
+---
+
+## Architectural Decision Summary — Priority #2 Closure
+
+**ADRs completed:** ADR-011 (Brain/JARVIS cognition-embodiment boundary), ADR-012 (documentation ownership), ADR-013 (wire protocol & topic namespace), ADR-014 (legacy implementation handling & deprecation). All four owned by Yash, dated 2026-07-02.
+
+**Open architectural questions:** No blocking architectural ambiguities remain. The remaining open questions concern implementation, future capabilities, and deferred design work rather than foundational architecture.
+
+**Decisions intentionally deferred:** the T2 federation/handoff protocol mechanics (`CHIMERA_ECOSYSTEM_ARCHITECTURE.md` §7 names the primitives, doesn't design the protocol); the concrete envelope JSON schema and risk-taxonomy package location (ADR-013 sets the v1 baseline, not the artifact); Brain's security-foundation rebuild scope (flagged as a tie, not a pass, in the Priority #1 six-dimension evaluation — Priority #3 scope); the specific locally-sovereign safety-action list (§4b, populated when a concrete need exists).
+
+**Implementation work that should begin immediately after Priority #2:** extract the JARVIS node SDK from `jarvis_core` before any tag-and-freeze step (ADR-014 ordering); git-tag and freeze `jarvis_core`'s and `brain_pc.py`'s cognition modules; delete Brain's confirmed-dead modules; build the `chimera/*` envelope schema and risk-taxonomy package (Priority #3 proper); revive `hugginggpt/server/jarvis/*` as the skill/HAL catalog. **Superseded by Part 3's dependency analysis below** — several of these are not yet safe to execute as originally worded; see the corrected classifications and migration steps.
+
+---
+
+## Part 3 — ADR-014 Dependency Analysis (Priority #2 Closure)
+
+Performed before any cleanup, per explicit instruction: no deletion, archival, or extraction has occurred as a result of this analysis. Nine parallel audits, each checking source references, tests, docs, ADR references, build scripts, tooling, runtime config, startup paths, imports, and generated code/automation across **both** repositories — not assuming ADR-014's original table was correct, verifying it. It found one factual error in ADR-014 itself and several dispositions that need to change from "act now" to "requires migration first." Corrections below supersede the ADR-014 table where they conflict; ADR-014's text is left as the historical record of the original decision, not rewritten.
+
+### Final classifications
+
+| Candidate | ADR-014 said | Verified classification | Why it changed (or didn't) |
+|---|---|---|---|
+| `jarvis_core/core/{brain.py, memory.py, scheduler.py}` | Retire | **Safe to archive** | Confirmed: zero external references anywhere in either repo; filesystem evidence independently confirms it never ran (no `brain/chroma/`, template-only `knowledge_graph.md`, no `.env`). Matches ADR-014, with one nuance below. |
+| `jarvis_core/core/{transport.py, signing.py, sandbox.py}` + `phone_executor.py` | Keep — extract as node SDK | **Requires migration first** | Real, tested, used code — but `sandbox.py` is imported by `brain.py` (a retire candidate), so extraction must happen before archiving the cognition files, not after. A confirmed, still-unfixed bug exists: `signing.py` signs the envelope before `transport.py` injects `request_id`, so every signed phone command fails verification. Extracting this as-is would ship a broken RPC layer. |
+| `hugginggpt/server/jarvis_prod/brain_pc.py` | Retire | **Requires migration first** | `_smoke.py` — the only integration test either repo has — does `from brain_pc import Brain`. Tagging/freezing this file today breaks the one thing that currently passes. `run_jarvis.ps1`'s prod path also execs it directly. |
+| `hugginggpt/server/jarvis_prod/{protocol.py, jobs.py, telegram_gateway.py, scheduler.py}` | Keep — migrate to ADR-013 namespace | **Requires migration first** | Live, load-bearing, imported by both production entrypoints (`brain_pc.py`, `agent_phone.py`) and exercised by `_smoke.py`. "Keep indefinitely" undersells it — the migration to `chimera/*` (ADR-013) is the actual decision, not yet executed anywhere in code. |
+| `hugginggpt/server/awesome_chat.py` | Retire on a schedule | **Still actively referenced** | More central than "retire on a schedule" implies: `run_jarvis.ps1` execs it as the *default* foreground process. Not peripheral legacy — it's what runs when the launcher is invoked normally. ADR-014's trial-period gate is still the right retirement mechanism, just needs this correction to how central the file is today. |
+| `hugginggpt/server/bridge_server.py` | Keep short-term | **Still actively referenced** | Two launcher scripts spawn it directly; `device_integration.py` talks to it over HTTP as `awesome_chat.py`'s actual execution surface. Zero test coverage — flagged separately as a real gap (an unauthenticated, RCE-capable HTTP server with no tests). ADR-014's stated supersession trigger ("§6.5") doesn't literally exist in `CHIMERA_ECOSYSTEM_ARCHITECTURE.md`'s current section numbering — closest is invariant 5 of §6; citation fixed below. |
+| `hugginggpt/server/jarvis/*` (skill/HAL framework) | Revive | **Safe to archive** (as-is, today) | Confirmed dead — zero references anywhere outside its own files. "Revive" is correctly a *future* Priority #3 task, not a present state; nothing depends on it today, so archiving it in place costs nothing and forecloses nothing. |
+| `easytool/`, `taskbench/` | Remove or attribute | **Safe to remove** | Zero references in either repo, confirmed exhaustively. Unlike the other candidates, nothing unique is lost — these are unmodified copies of public upstream repos (Microsoft's EasyTool/TaskBench), re-cloneable if ever needed. Removal, not archival, is the cleaner outcome here specifically. |
+| Brain `models/{reranker.py, router.py}`, `memory_module.py`, `logging_utils.py`, `tools/` | Delete | **Split — see ADR-014 amendment below** | Two of five paths don't exist in Brain at all. |
+
+### ADR-014 amendment — path misattribution
+
+`memory_module.py` and `logging_utils.py` **do not exist anywhere in the Brain repository.** Files with those exact names exist at `JARVIS/hugginggpt/server/memory_module.py` and `JARVIS/hugginggpt/server/logging_utils.py` — a different repo and directory than ADR-014's table states. Brain's own `PHASE3_TECH_DEBT_AUDIT.md` (which ADR-014 cites as its evidentiary basis) is explicit about this — it writes the full path `hugginggpt/server/memory_module.py` — but ADR-014's table dropped the `hugginggpt/server/` prefix when compiling the disposition list, misattributing two JARVIS-repo files to Brain. This is a drafting error in ADR-014 itself, caught by this dependency analysis, not a new decision — the disposition question for the *real* files (in JARVIS) was never actually made and needs a separate pass; it is not resolved by this ADR.
+
+Of the three components that do exist in Brain:
+- **`models/reranker.py`, `models/router.py`** — confirmed dead (zero references anywhere, no re-export used, no conflicting guidance in any Brain doc). **Safe to remove.**
+- **`tools/`** — confirmed zero external references today, but Brain's own planning history disagrees with itself about its fate: `BRAIN_V2_DESIGN.md` (2026-06-12) says it "stays" and gains a manifest/risk-class extension (never implemented); `PHASE7`/`PHASE8` (2026-06-14, later and more specific) say retire. ADR-014 asserted "delete" without acknowledging this conflict. **Requires further investigation** — resolve which of Brain's own prior plans governs before acting, don't default to the newest one by assumption.
+
+### Migration steps for each "Requires migration first" item
+
+1. **Node SDK extraction**: fix the signing-order bug (`request_id` must be included before `sign_envelope()` runs, or the HMAC must cover the final payload) and de-duplicate `phone_executor.py`'s hand-copied verify logic *before* packaging `transport.py`/`signing.py`/`sandbox.py` as a standalone SDK — shipping the bug into a reusable package makes it every future node's problem instead of one file's.
+2. **`brain_pc.py`**: either update `_smoke.py` to import from wherever the extracted node SDK lands, or explicitly retire `_smoke.py` alongside it with a replacement integration test — do not tag-and-freeze while the only passing test still imports it directly.
+3. **`jarvis_prod` infra files**: the ADR-013 `chimera/*` rename is the actual migration; do it as one coordinated change across `protocol.py`, `brain_pc.py`, `agent_phone.py`, and `_smoke.py` together, not file-by-file, since they import each other.
+
+### Corrections to earlier text
+
+`bridge_server.py`'s ADR-014 entry cited "`CHIMERA_ECOSYSTEM_ARCHITECTURE.md` §6.5" as its supersession trigger — that document's §6 has five unnumbered invariants, not subsections; the intended reference is invariant 5 (defense in depth / independent root of trust). Noted here rather than silently editing the earlier ADR-014 table entry.
