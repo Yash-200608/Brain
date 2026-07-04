@@ -102,6 +102,19 @@ class ChimeraEnvelope(BaseModel):
     risk: RiskTier = RiskTier.HIGH  # fail-closed default
     nonce: str = Field(default_factory=lambda: secrets.token_hex(16))
     ts: int = Field(default_factory=lambda: int(time.time()))
+    # Optional correlation id (ADR-013's adopted message shape names
+    # "correlation-id-based request/response matching"; Priority #3 shipped
+    # without it as a deliberate, recorded deferral -- see
+    # docs/audits/PRIORITY-3-EXECUTION-SPINE-CLOSURE.md item 2). Completed in
+    # Priority #4 Milestone 2: a "cmd" envelope's request_id, when a
+    # responder echoes it back on the matching "response", lets
+    # mqtt/signed.py's send_command_and_await_response() correlate
+    # concurrent overlapping commands to the same node+action safely.
+    # Optional and additive (Section 8's shape-versioning rule) -- a
+    # response with no request_id still correlates via the (verb, action)
+    # fallback that was the sole matching mechanism before this field
+    # existed.
+    request_id: str | None = None
     sig: str = ""  # populated by sign(); empty until signed
 
     def signable_dict(self) -> dict[str, Any]:
