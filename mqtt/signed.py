@@ -8,13 +8,19 @@ design commitment, so this thin module is where the two meet.
 Does NOT do: topic construction (callers pass literal topic strings; no
 real call site exists yet to design a builder against), EventBus wiring,
 Device Registry, or anything involving a live broker.
+
+Priority #3 Milestone 8 adds send_command_and_await_response() -- the
+first bidirectional (publish-then-await) consumer, wiring the real
+command path proven purely via hand-built dicts in Milestone 6.
 """
 
 from __future__ import annotations
 
+import asyncio
+
 from pydantic import ValidationError
 
-from mqtt.client import BrainMqttClient
+from mqtt.client import BrainMqttClient, JsonDict
 from protocols.chimera_contract import ChimeraEnvelope, sign, verify
 
 
@@ -43,3 +49,50 @@ def verify_payload(payload: dict, key: str) -> ChimeraEnvelope | None:
     except (ValidationError, TypeError):
         return None
     return envelope if verify(envelope, key) else None
+
+
+async def send_command_and_await_response(
+    client: BrainMqttClient,
+    node: str,
+    action: str,
+    params: dict,
+    key: str,
+    *,
+    timeout: float = 30.0,
+) -> ChimeraEnvelope | None:
+    """Signs+publishes a "cmd" envelope to chimera/{node}/cmd, then awaits
+    the first inbound chimera/{node}/response message that verifies and
+    matches this command's action. Returns None on timeout or verification
+    failure -- never raises.
+
+    No request_id/correlation field exists on ChimeraEnvelope (a
+    deliberate Milestone 6 decision, not revisited here) -- matching on
+    (verb, action) is sufficient for a single in-flight command, which is
+    this milestone's exact scope. Not safe for concurrent overlapping
+    commands to the same node+action -- that's a correlation-ID milestone
+    for later, not this one.
+
+    Accepted limitation: repeated calls on the same client accumulate
+    additional handlers on chimera/{node}/response (each subscribe() call
+    appends to a list) -- harmless for a single in-flight command, since
+    each stale handler's future.done() guard makes it a no-op.
+    """
+    loop = asyncio.get_running_loop()
+    future: asyncio.Future[ChimeraEnvelope] = loop.create_future()
+
+    async def _on_response(topic: str, payload: JsonDict) -> None:
+        if future.done():
+            return
+        envelope = verify_payload(payload, key)
+        if envelope is None or envelope.verb != "response" or envelope.action != action:
+            return
+        future.set_result(envelope)
+
+    await client.subscribe(f"chimera/{node}/response", _on_response)
+    cmd = ChimeraEnvelope(node=node, verb="cmd", action=action, params=params)
+    await publish_envelope(client, f"chimera/{node}/cmd", cmd, key)
+
+    try:
+        return await asyncio.wait_for(future, timeout=timeout)
+    except asyncio.TimeoutError:
+        return None

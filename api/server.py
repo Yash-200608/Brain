@@ -13,6 +13,7 @@ from config import settings
 
 from api.middleware.auth import AuthMiddleware
 from api.middleware.rate_limit import RateLimitMiddleware
+from api.routes import devices as devices_route
 from api.routes import goals as goals_route
 from api.routes import memory as memory_route
 from api.routes import query as query_route
@@ -30,13 +31,14 @@ async def lifespan(app: FastAPI):
 
     Default (mqtt_enabled=False): a true no-op -- no task spawned, no
     connection attempted. Priority #3 Milestone 2 gives Brain the
-    capability to speak MQTT; Milestone 5 adds its first real consumer --
-    when enabled AND settings.mqtt_hmac_key is set, subscribes to
-    chimera/+/presence and records inbound presence into DeviceStore. If
-    mqtt_enabled is true but no HMAC key is configured, the client still
-    starts (other future subscribers may not need signing) but the
-    presence subscription is skipped with a warning, rather than
-    subscribing a handler that can structurally never verify anything.
+    capability to speak MQTT; Milestone 5 adds its first real consumer
+    (chimera/+/presence) and Milestone 7 adds a second (chimera/+/state) --
+    when enabled AND settings.mqtt_hmac_key is set, both subscribe and
+    record inbound data into the same DeviceStore. If mqtt_enabled is true
+    but no HMAC key is configured, the client still starts (other future
+    subscribers may not need signing) but both subscriptions are skipped
+    with a warning, rather than subscribing handlers that can structurally
+    never verify anything.
     """
     mqtt_client = None
     if settings.mqtt_enabled:
@@ -47,15 +49,21 @@ async def lifespan(app: FastAPI):
         if settings.mqtt_hmac_key:
             from devices.store import DeviceStore
             from mqtt.presence import make_presence_handler
+            from mqtt.state import make_state_handler
 
             device_store = DeviceStore()
             await mqtt_client.subscribe(
                 "chimera/+/presence",
                 make_presence_handler(device_store, settings.mqtt_hmac_key),
             )
+            await mqtt_client.subscribe(
+                "chimera/+/state",
+                make_state_handler(device_store, settings.mqtt_hmac_key),
+            )
         else:
             logger.warning(
-                "mqtt_hmac_key not set -- skipping chimera/+/presence subscription"
+                "mqtt_hmac_key not set -- skipping chimera/+/presence and "
+                "chimera/+/state subscriptions"
             )
     else:
         logger.debug("mqtt disabled -- lifespan is a no-op")
@@ -110,6 +118,7 @@ app.include_router(query_route.router, prefix="/api", tags=["query"])
 app.include_router(memory_route.router, prefix="/api/memory", tags=["memory"])
 app.include_router(goals_route.router, prefix="/api/goals", tags=["goals"])
 app.include_router(sessions_route.router, prefix="/api/sessions", tags=["sessions"])
+app.include_router(devices_route.router, prefix="/api/devices", tags=["devices"])
 
 
 @app.get("/health")

@@ -15,10 +15,26 @@ header {
 .dot-ok { background: var(--accent); }
 .dot-bad { background: #f87171; }
 main {
-  display: grid; grid-template-columns: 1fr 320px 320px;
+  display: grid; grid-template-columns: 1fr 320px 320px 320px;
   gap: 16px; padding: 16px; height: calc(100vh - 60px);
 }
 section, aside { background: var(--panel); border-radius: 8px; padding: 16px; overflow-y: auto; }
+#devices-panel li { list-style: none; margin: 0 0 10px 0; }
+#devices-panel .device-empty { color: var(--muted); list-style: none; }
+#devices-panel .device-item { display: flex; flex-direction: column; }
+#devices-panel .device-item > div:first-child { display: flex; align-items: center; }
+#devices-panel .device-state {
+  font-size: 0.8em; color: var(--muted); margin: 4px 0 0 18px; word-break: break-all;
+}
+#devices-panel .ping-btn {
+  margin-left: auto; padding: 2px 10px; font-size: 0.8em; border-radius: 4px;
+}
+#devices-panel .ping-btn:disabled { opacity: 0.5; cursor: default; }
+#devices-panel .device-ping-result {
+  font-size: 0.8em; margin: 4px 0 0 18px; word-break: break-all; min-height: 1em;
+}
+#devices-panel .ping-ok { color: var(--accent); }
+#devices-panel .ping-bad { color: #f87171; }
 #messages { flex: 1; overflow-y: auto; height: 80%; }
 .msg-user { color: var(--accent); margin: 8px 0; }
 .msg-jarvis { color: var(--fg); margin: 8px 0; }

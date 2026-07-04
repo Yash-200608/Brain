@@ -44,3 +44,12 @@ class MemorySearchIn(BaseModel):
 class HealthOut(BaseModel):
     status: str
     components: dict[str, str]
+
+
+class DeviceOut(BaseModel):
+    node: str
+    first_seen: float
+    last_seen: float
+    state: dict | None = None
+    last_state_at: float | None = None
+    is_online: bool

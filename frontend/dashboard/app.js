@@ -6,6 +6,7 @@ const $form = document.getElementById("composer");
 const $input = document.getElementById("prompt");
 const $memory = document.getElementById("memory-list");
 const $goals = document.getElementById("goals-list");
+const $devices = document.getElementById("devices-list");
 const $status = document.getElementById("status");
 
 // Brain's auth is fail-closed (Priority #1 / Ecosystem Architecture §6.1):
@@ -100,6 +101,107 @@ async function loadGoals() {
   } catch (e) { setConnectionStatus(false, "offline"); }
 }
 
+// Sticky per-node ping result, survives the periodic 30s refresh()'s
+// renderDevices() rebuild -- without this, a ping's result could be wiped
+// by the next poll tick before the user finishes reading it, undermining
+// the dashboard's job of demonstrating the round trip actually happened.
+const lastPingResult = new Map();
+
+// Priority #3 Milestone 11: read-only view of Brain's device registry
+// (GET /api/devices/, added Milestone 9) -- proves the execution spine's
+// Dashboard/API -> Brain read path end-to-end.
+function renderDevices(devices) {
+  $devices.innerHTML = "";
+  if (devices.length === 0) {
+    const li = document.createElement("li");
+    li.className = "device-empty";
+    li.textContent = "no devices seen yet";
+    $devices.appendChild(li);
+    return;
+  }
+  devices.forEach((d) => {
+    const li = document.createElement("li");
+    li.className = "device-item";
+
+    const row = document.createElement("div");
+    const dot = document.createElement("span");
+    dot.className = d.is_online ? "dot dot-ok" : "dot dot-bad";
+    dot.title = d.is_online ? "online" : "offline";
+    row.appendChild(dot);
+    row.appendChild(document.createTextNode(` ${d.node} `));
+
+    const resultEl = document.createElement("div");
+    const lastResult = lastPingResult.get(d.node);
+    resultEl.className = lastResult ? lastResult.className : "device-ping-result";
+    resultEl.textContent = lastResult ? lastResult.text : "";
+
+    const pingBtn = document.createElement("button");
+    pingBtn.className = "ping-btn";
+    pingBtn.type = "button";
+    pingBtn.textContent = "Ping";
+    pingBtn.addEventListener("click", () => pingDevice(d.node, pingBtn, resultEl));
+    row.appendChild(pingBtn);
+
+    li.appendChild(row);
+    li.appendChild(resultEl);
+
+    if (d.state && Object.keys(d.state).length > 0) {
+      const state = document.createElement("div");
+      state.className = "device-state";
+      state.textContent = JSON.stringify(d.state);
+      li.appendChild(state);
+    }
+
+    $devices.appendChild(li);
+  });
+}
+
+async function loadDevices() {
+  try {
+    const r = await authenticatedFetch(`${API}/api/devices/`);
+    if (!r.ok) return;
+    setConnectionStatus(true);
+    const devices = await r.json();
+    renderDevices(devices);
+  } catch (e) { setConnectionStatus(false, "offline"); }
+}
+
+// Priority #3 Milestone 12 (Execution Spine Capstone): the dashboard's
+// demonstration of the complete Dashboard/API -> Brain -> MQTT -> JARVIS
+// -> Response -> Brain -> Dashboard/API path via POST /api/devices/{node}/ping.
+async function pingDevice(node, buttonEl, resultEl) {
+  const setResult = (className, text) => {
+    lastPingResult.set(node, { className, text });
+    // The element may have already been replaced by a refresh() tick that
+    // fired while this request was in flight -- only touch it if it's
+    // still the one currently in the DOM (renderDevices() reads the map
+    // fresh on every rebuild, so the result isn't lost either way).
+    if (document.body.contains(resultEl)) {
+      resultEl.className = className;
+      resultEl.textContent = text;
+    }
+  };
+
+  buttonEl.disabled = true;
+  setResult("device-ping-result", "pinging…");
+  try {
+    const r = await authenticatedFetch(
+      `${API}/api/devices/${encodeURIComponent(node)}/ping`,
+      { method: "POST" }
+    );
+    const body = await r.json().catch(() => ({}));
+    if (r.ok) {
+      setResult("device-ping-result ping-ok", `ping ok: ${JSON.stringify(body.result)}`);
+    } else {
+      setResult("device-ping-result ping-bad", `ping failed (${r.status}): ${body.detail || r.statusText}`);
+    }
+  } catch (e) {
+    setResult("device-ping-result ping-bad", `ping error: ${e}`);
+  } finally {
+    if (document.body.contains(buttonEl)) buttonEl.disabled = false;
+  }
+}
+
 $form.addEventListener("submit", (e) => {
   e.preventDefault();
   const q = $input.value.trim();
@@ -108,5 +210,10 @@ $form.addEventListener("submit", (e) => {
   send(q).catch((err) => append("jarvis", `error: ${err}`));
 });
 
-loadGoals();
-setInterval(loadGoals, 30000);
+function refresh() {
+  loadGoals();
+  loadDevices();
+}
+
+refresh();
+setInterval(refresh, 30000);

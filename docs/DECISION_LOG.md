@@ -186,3 +186,68 @@ Revisit the `awesome_chat.py`/`bridge_server.py` retirement timeline once Priori
 **Implementation work that should begin immediately after Priority #2:** see [ADR-014 Dependency Analysis](audits/ADR-014-DEPENDENCY-ANALYSIS.md) — several of ADR-014's original dispositions are not yet safe to execute as originally worded; that document has the verified classifications and required migration steps for each.
 
 **Implementation readiness (Priority #2 closure):** **GO** — see [Priority #2 Readiness Review](audits/PRIORITY-2-READINESS-REVIEW.md) for the full evidence-based review, blocker list (critical/high/can-wait), and rationale.
+
+---
+
+## Architectural Decision Summary — Priority #3 Closure
+
+**No new ADRs.** Priority #3 (the execution spine) implemented ADR-013
+(wire protocol & topic namespace) and the extraction half of ADR-014 (node
+SDK) at the code level — it did not revisit either decision or produce new
+architecturally-significant choices requiring a new ADR entry. Every
+judgment call made during implementation (storage shape for opaque device
+state, derived-vs-stored `is_online()`, deferring scope enforcement,
+deferring the `request_id`/correlation field, etc.) was scoped as
+implementation detail in service of ADR-013/014, not a new architectural
+decision — each is recorded with its rationale in the corresponding
+milestone's plan section and in [`audits/PRIORITY-3-EXECUTION-SPINE-CLOSURE.md`](audits/PRIORITY-3-EXECUTION-SPINE-CLOSURE.md),
+not duplicated here.
+
+**Completion criterion:** a user-authored "Execution Spine Capstone"
+specification (quoted in full in the closure report) defined "done" for
+this priority precisely, obtained via a clarifying question once
+milestone-by-milestone work transitioned to autonomous multi-milestone
+continuation. All of its bullets are satisfied with direct, reproducible
+evidence — see the closure report for the bullet-by-bullet accounting.
+
+**What shipped:** twelve milestones, summarized in full in
+[`audits/PRIORITY-3-EXECUTION-SPINE-CLOSURE.md`](audits/PRIORITY-3-EXECUTION-SPINE-CLOSURE.md) —
+signed `ChimeraEnvelope` contract and node-SDK extraction (M1); Brain-side
+MQTT connectivity, signed-envelope composition, and a device registry
+(M2–4); presence and state subscribers with real MQTT wiring (M5, M7); a
+proven authenticated command/response round trip, first via hand-built
+dicts and then via real subscribe/publish wiring on both sides (M6, M8); a
+read-only devices API (M9); the JARVIS-side presence/state publisher
+closing the last capstone gap (M10); a minimal dashboard device view (M11);
+and a live end-to-end demonstration over a real (anonymous, no-credentials)
+local Mosquitto broker, including a real command round-tripping
+successfully more than a dozen times over a 13+-minute session (M12).
+
+**Real bugs found and fixed along the way:** six, three caught before they
+ever shipped (an unimportable vendored file that `ast.parse()` couldn't
+catch but a real import could; a SQLite `ALTER TABLE` migration gap; an
+empty-segment MQTT wildcard-matching bug) and three found and fixed live
+during Milestone 12 (uvicorn silently hardcoding `ProactorEventLoop` on
+Windows regardless of `asyncio.set_event_loop_policy()`; the JARVIS-side
+counterpart of the same underlying issue, fixed differently since no
+framework there hardcodes the loop factory; and a live-demo `.env` flag
+leaking into the test suite's default state). Full detail in the closure
+report.
+
+**Explicitly not done, per the capstone's own exclusions:** skill/task
+orchestration, EventBus integration beyond the spine's own MQTT client,
+cognition refactoring, `jarvis_core` retirement (ADR-014's git-tag-and-freeze
+step remains pending), and any other Priority #4-scoped work.
+
+**Test suites:** Brain 111 → 174 passed; JARVIS `jarvis_node_sdk` 0 → 26
+passed + 1 pre-existing skip. Zero regressions across all twelve milestones.
+
+**Remaining technical debt, ranked, and recommendations for Priority #4:**
+see [`audits/PRIORITY-3-EXECUTION-SPINE-CLOSURE.md`](audits/PRIORITY-3-EXECUTION-SPINE-CLOSURE.md) —
+highest priority is resolving scope enforcement (`has_scope()`) in one
+coherent pass, flagged and deliberately deferred across three separate
+milestones (9, 12, and the original Priority #2 readiness review) rather
+than patched incrementally.
+
+**Closure status: CLOSED.** See the closure report for the full
+evidence-based verdict.
