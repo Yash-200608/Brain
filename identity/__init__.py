@@ -2,6 +2,8 @@
 from .models import (
     ALL_SCOPES,
     SCOPE_ADMIN,
+    SCOPE_DEVICES_ACTION,
+    SCOPE_DEVICES_READ,
     SCOPE_GOALS,
     SCOPE_MEMORY_READ,
     SCOPE_MEMORY_WRITE,
@@ -16,6 +18,8 @@ from .service import IdentityService, get_identity_service, set_identity_service
 __all__ = [
     "ALL_SCOPES",
     "SCOPE_ADMIN",
+    "SCOPE_DEVICES_ACTION",
+    "SCOPE_DEVICES_READ",
     "SCOPE_GOALS",
     "SCOPE_MEMORY_READ",
     "SCOPE_MEMORY_WRITE",

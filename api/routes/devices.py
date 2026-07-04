@@ -4,24 +4,25 @@
 real command demonstrated end-to-end" requirement, exposed through the
 Dashboard/API leg of that path).
 
-TODO(auth): no scope check yet -- has_scope() exists (identity/models.py)
-but is called by zero routes in this repo today. Per direct user
-confirmation during Milestone 9, route-specific scope enforcement is
-deliberately NOT added incrementally (not even for /ping, despite it
-being the "device-level action" PRIORITY-2-READINESS-REVIEW.md names as
-the trigger) -- a future authorization milestone should wire scope
-enforcement across all protected routes in one coherent pass. Flagged
-here so both routes surface in that pass rather than being silently
-missed.
+Scope enforcement (Priority #4 Milestone 1): the read routes require
+`devices.read`; the ping action requires `devices.action` -- the
+consequential device-level operation PRIORITY-2-READINESS-REVIEW.md named
+as the scope-enforcement trigger. The deferral flagged here through
+Priority #3 is now resolved: every route below carries an explicit scope
+check, wired in the same coherent pass as query/memory/goals/sessions.
+Later P4 milestones' skill-dispatch and approval endpoints reuse
+`devices.action` (or an approval-specific scope) the same way.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
+from api.deps import require_scope
 from api.schemas import DeviceOut
 from config import settings
 from devices.models import Device
 from devices.store import DeviceStore
+from identity import SCOPE_DEVICES_ACTION, SCOPE_DEVICES_READ
 from mqtt import get_mqtt_client, send_command_and_await_response
 
 router = APIRouter()
@@ -39,12 +40,20 @@ def _to_out(d: Device) -> DeviceOut:
     )
 
 
-@router.get("/", response_model=list[DeviceOut])
+@router.get(
+    "/",
+    response_model=list[DeviceOut],
+    dependencies=[Depends(require_scope(SCOPE_DEVICES_READ))],
+)
 def list_devices() -> list[DeviceOut]:
     return [_to_out(d) for d in _store.list()]
 
 
-@router.get("/{node}", response_model=DeviceOut)
+@router.get(
+    "/{node}",
+    response_model=DeviceOut,
+    dependencies=[Depends(require_scope(SCOPE_DEVICES_READ))],
+)
 def get_device(node: str) -> DeviceOut:
     d = _store.get(node)
     if d is None:
@@ -52,7 +61,10 @@ def get_device(node: str) -> DeviceOut:
     return _to_out(d)
 
 
-@router.post("/{node}/ping")
+@router.post(
+    "/{node}/ping",
+    dependencies=[Depends(require_scope(SCOPE_DEVICES_ACTION))],
+)
 async def ping_device(node: str) -> dict:
     """Sends the "ping" dummy command (jarvis_node_sdk.command_handler,
     Milestone 6/8) to `node` over the live MQTT round trip and returns its

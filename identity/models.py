@@ -17,10 +17,27 @@ SCOPE_MEMORY_READ = "memory.read"
 SCOPE_MEMORY_WRITE = "memory.write"
 SCOPE_GOALS = "goals"
 SCOPE_SESSIONS = "sessions"
+# Devices split read from action deliberately (Priority #4 M1): reading the
+# registry is low-privilege; invoking a device-level action (ping today,
+# skill dispatch + approval in later P4 milestones) is the consequential
+# operation PRIORITY-2-READINESS-REVIEW.md named as the scope-enforcement
+# trigger. Keeping them separate lets a future narrow key read device state
+# without being able to command devices.
+SCOPE_DEVICES_READ = "devices.read"
+SCOPE_DEVICES_ACTION = "devices.action"
 SCOPE_ADMIN = "admin"
 
 ALL_SCOPES: frozenset[str] = frozenset(
-    {SCOPE_QUERY, SCOPE_MEMORY_READ, SCOPE_MEMORY_WRITE, SCOPE_GOALS, SCOPE_SESSIONS, SCOPE_ADMIN}
+    {
+        SCOPE_QUERY,
+        SCOPE_MEMORY_READ,
+        SCOPE_MEMORY_WRITE,
+        SCOPE_GOALS,
+        SCOPE_SESSIONS,
+        SCOPE_DEVICES_READ,
+        SCOPE_DEVICES_ACTION,
+        SCOPE_ADMIN,
+    }
 )
 
 

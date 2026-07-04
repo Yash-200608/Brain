@@ -3,7 +3,9 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Request
 
+from api.deps import require_scope
 from api.schemas import QueryIn, QueryOut
+from identity import SCOPE_QUERY
 from orchestrator.orchestrator import JarvisOrchestrator
 
 router = APIRouter()
@@ -14,7 +16,11 @@ def get_orchestrator() -> JarvisOrchestrator:
     return _orch
 
 
-@router.post("/query", response_model=QueryOut)
+@router.post(
+    "/query",
+    response_model=QueryOut,
+    dependencies=[Depends(require_scope(SCOPE_QUERY))],
+)
 def query(
     payload: QueryIn,
     request: Request,
