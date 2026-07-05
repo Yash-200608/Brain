@@ -19,6 +19,7 @@ import uuid
 from typing import Any
 
 from agents.critic import CriticAgent
+from agents.device_agent import DeviceAgent
 from agents.memory_agent import MemoryAgent
 from agents.registry import WorkerRegistry
 from agents.workers import build_default_registry
@@ -28,6 +29,8 @@ from core.pipeline import CognitivePipeline
 from core.planning import Planner
 from core.routing import IntentRouter
 from core.session import SessionState
+from devices.approvals import ApprovalStore
+from devices.dispatcher import DeviceDispatcher
 from events import get_event_bus
 from goals.store import GoalStore
 from identity import Principal, get_identity_service
@@ -62,6 +65,13 @@ class JarvisOrchestrator:
         self.session_service = SessionService(self.log_store)
         self.reflector = Reflector(self.memory_service)
 
+        # Priority #4 Milestone 7: device dispatch bridge -- the DeviceAgent
+        # executes low/medium-risk device plan steps over the spine; the
+        # ApprovalStore holds high-risk ones for the NP-7 approval flow.
+        self.device_dispatcher = DeviceDispatcher()
+        self.approval_store = ApprovalStore()
+        self.registry.register(DeviceAgent(self.device_dispatcher))
+
         self.pipeline = CognitivePipeline(
             registry=self.registry,
             router=self.router,
@@ -73,6 +83,8 @@ class JarvisOrchestrator:
             goal_service=self.goal_service,
             session_service=self.session_service,
             bus=self.bus,
+            device_dispatcher=self.device_dispatcher,
+            approval_store=self.approval_store,
         )
         self.sessions = SessionManager(self.pipeline)
 

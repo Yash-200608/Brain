@@ -24,6 +24,7 @@ from agents.protocol import AgentStatus
 from config import settings
 from core.context import TurnContext
 from core.context_optimizer import ContextOptimizer
+from core.device_intents import map_device_intent
 from core.planning import Planner
 from core.routing import IntentRouter
 from core.task import Task, TaskStatus
@@ -42,6 +43,8 @@ if TYPE_CHECKING:
     from agents.critic import CriticAgent
     from agents.registry import WorkerRegistry
     from core.session import SessionState
+    from devices.approvals import ApprovalStore
+    from devices.dispatcher import DeviceDispatcher
     from identity.models import Principal
     from reflection.reflector import Reflector
     from services import GoalService, MemoryService, SessionService
@@ -63,6 +66,8 @@ class CognitivePipeline:
         goal_service: GoalService,
         session_service: SessionService,
         bus: EventBus | None = None,
+        device_dispatcher: "DeviceDispatcher | None" = None,
+        approval_store: "ApprovalStore | None" = None,
     ) -> None:
         self.registry = registry
         self.router = router
@@ -74,6 +79,11 @@ class CognitivePipeline:
         self.goal_service = goal_service
         self.session_service = session_service
         self.bus = bus
+        # Priority #4 Milestone 7 -- both None means device intents are
+        # simply never matched (device dispatch disabled), preserving the
+        # pre-M7 pipeline exactly.
+        self.device_dispatcher = device_dispatcher
+        self.approval_store = approval_store
 
     # ----- public entrypoint -----
     async def run_turn(
@@ -84,6 +94,18 @@ class CognitivePipeline:
     ) -> dict[str, Any]:
         session_id = state.session_id
         await self._emit(TurnStarted(session_id=session_id, user_input=user_input))
+
+        # Priority #4 Milestone 7: deterministic device-intent mapping runs
+        # BEFORE the LLM router/planner (frozen definition Risk R2) -- the
+        # daily commands the retirement trial hinges on must not depend on
+        # LLM parse luck. Non-matches fall through to the normal pipeline
+        # unchanged.
+        if self.device_dispatcher is not None:
+            device_intent = map_device_intent(user_input)
+            if device_intent is not None:
+                return await self._run_device_turn(
+                    state, user_input, device_intent, principal
+                )
 
         intent = await asyncio.to_thread(self.router.classify, user_input)
         logger.info(
@@ -138,6 +160,81 @@ class CognitivePipeline:
         }
 
     # ----- internal -----
+    async def _run_device_turn(
+        self,
+        state: SessionState,
+        user_input: str,
+        device_intent,
+        principal: Principal | None,
+    ) -> dict[str, Any]:
+        """One device-dispatch turn (Priority #4 Milestone 7).
+
+        Three deliberate divergences from the normal turn, each load-bearing:
+        * **No critic/retry loop.** The critic re-running _run_tasks would
+          RE-DISPATCH the device action -- re-sending an SMS because an LLM
+          wanted better prose. Device outputs are the node's truthful
+          answer; they are not subject to literary review.
+        * **No reflect step.** Reflection is LLM-dependent and every
+          dispatch is already durably recorded in the dispatch audit trail;
+          double-writing it into semantic memory adds noise, not recall.
+        * **No memory retrieval / LLM planner.** The mapper already decided
+          the plan deterministically.
+        Session logging, history, and Turn/Task events behave exactly like
+        a normal turn.
+        """
+        from devices.approvals import principal_key
+
+        session_id = state.session_id
+        skill, params, risk = device_intent.skill, device_intent.params, device_intent.risk
+
+        requester = principal_key(
+            principal.user_id if principal else "unknown",
+            principal.client_id if principal else "unknown",
+            (principal.metadata.get("key_id") if principal else None),
+        )
+
+        if risk >= 2 and self.approval_store is not None:
+            # NP-7 property 2: the tier is classified HERE, before anything
+            # executes; the approval is bound to this exact action instance.
+            node = self.device_dispatcher.resolve_node(skill)
+            approval = self.approval_store.request(
+                node=node or "unresolved", skill=skill, params=params,
+                risk=risk, requester=requester,
+            )
+            self.device_dispatcher.audit.record(
+                requester=requester, node=node or "unresolved", skill=skill,
+                params=params, risk=risk, outcome="approval_requested",
+                approval_id=approval.id,
+            )
+            instruction = (
+                f"device action {skill} is approval-gated (risk {risk}); "
+                f"pending approval id: {approval.id}"
+            )
+            task = Task(agent="device", instruction=instruction, risk=risk,
+                        extra={"skill": skill, "params": params, "approval_id": approval.id})
+        else:
+            task = Task(agent="device", instruction=f"device: {skill} {params}",
+                        risk=risk, extra={"skill": skill, "params": params})
+
+        final_output = await self._run_tasks(
+            [task], "", [], principal=principal, session_id=session_id
+        )
+
+        await asyncio.to_thread(
+            self.session_service.append_turn, session_id, user_input, final_output
+        )
+        state.history.append({"input": user_input, "output": final_output})
+        state.last_input = user_input
+        state.last_memory = []
+
+        await self._emit(TurnCompleted(session_id=session_id, response=final_output))
+        return {
+            "session_id": session_id,
+            "response": final_output,
+            "memory_used": [],
+            "tasks": [task.__dict__],
+        }
+
     async def _run_tasks(
         self,
         tasks: list[Task],

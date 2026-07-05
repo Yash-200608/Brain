@@ -25,6 +25,12 @@ SCOPE_SESSIONS = "sessions"
 # without being able to command devices.
 SCOPE_DEVICES_READ = "devices.read"
 SCOPE_DEVICES_ACTION = "devices.action"
+# Approving a risk-gated device action is deliberately MORE privileged than
+# requesting one (NP-7 property 1: the approver must be "privileged above"
+# the requester) -- devices.approve is excluded from default_scopes(), so
+# an ordinary key that can request actions cannot approve them; only an
+# explicitly-registered approver key (or admin) can.
+SCOPE_DEVICES_APPROVE = "devices.approve"
 SCOPE_ADMIN = "admin"
 
 ALL_SCOPES: frozenset[str] = frozenset(
@@ -36,14 +42,16 @@ ALL_SCOPES: frozenset[str] = frozenset(
         SCOPE_SESSIONS,
         SCOPE_DEVICES_READ,
         SCOPE_DEVICES_ACTION,
+        SCOPE_DEVICES_APPROVE,
         SCOPE_ADMIN,
     }
 )
 
 
 def default_scopes() -> frozenset[str]:
-    """Scopes granted to an ordinary authenticated client (everything but admin)."""
-    return frozenset(ALL_SCOPES - {SCOPE_ADMIN})
+    """Scopes granted to an ordinary authenticated client (everything but
+    admin and the approval privilege -- see SCOPE_DEVICES_APPROVE)."""
+    return frozenset(ALL_SCOPES - {SCOPE_ADMIN, SCOPE_DEVICES_APPROVE})
 
 
 # -- principal ---------------------------------------------------------------

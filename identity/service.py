@@ -9,6 +9,7 @@ Foundation behavior (deliberate):
 """
 from __future__ import annotations
 
+import hashlib
 import threading
 
 from config import settings
@@ -27,8 +28,16 @@ class IdentityService:
         seed = api_keys if api_keys is not None else settings.api_keys
         for token, user_id in seed.items():
             if token:
+                # metadata.key_id is a token digest, never the token itself
+                # (it flows into audit-trail rows). It is what makes two
+                # keys with the same user_id distinguishable for the
+                # approval flow's distinct-principal check (NP-7).
+                key_id = hashlib.sha256(token.encode()).hexdigest()[:12]
                 self._keys[token] = Principal(
-                    user_id=user_id, client_id="api", scopes=default_scopes()
+                    user_id=user_id,
+                    client_id="api",
+                    scopes=default_scopes(),
+                    metadata={"key_id": key_id},
                 )
 
     def default_principal(self) -> Principal:

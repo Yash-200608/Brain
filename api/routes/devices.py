@@ -20,13 +20,24 @@ from fastapi import APIRouter, Depends, HTTPException
 from api.deps import require_scope
 from api.schemas import DeviceOut
 from config import settings
+from devices.approvals import ApprovalStore, principal_key
+from devices.audit import DispatchAudit
+from devices.dispatcher import DeviceDispatcher
 from devices.models import Device
 from devices.store import DeviceStore
-from identity import SCOPE_DEVICES_ACTION, SCOPE_DEVICES_READ
+from identity import (
+    SCOPE_DEVICES_ACTION,
+    SCOPE_DEVICES_APPROVE,
+    SCOPE_DEVICES_READ,
+    Principal,
+)
 from mqtt import get_mqtt_client, send_command_and_await_response
 
 router = APIRouter()
 _store = DeviceStore()
+_approvals = ApprovalStore()
+_audit = DispatchAudit()
+_dispatcher = DeviceDispatcher(store=_store, audit=_audit)
 
 
 def _to_out(d: Device) -> DeviceOut:
@@ -49,6 +60,94 @@ def _to_out(d: Device) -> DeviceOut:
 )
 def list_devices() -> list[DeviceOut]:
     return [_to_out(d) for d in _store.list()]
+
+
+# -- approvals + audit (Priority #4 Milestone 7) ---------------------------
+# NOTE: these static paths MUST be registered before the /{node} route
+# below, or FastAPI would happily treat "approvals" as a node name.
+
+
+@router.get(
+    "/approvals",
+    dependencies=[Depends(require_scope(SCOPE_DEVICES_READ))],
+)
+def list_approvals() -> list[dict]:
+    return [
+        {
+            "id": a.id,
+            "node": a.node,
+            "skill": a.skill,
+            "params": a.params,
+            "risk": a.risk,
+            "created_at": a.created_at,
+        }
+        for a in _approvals.list_pending()
+    ]
+
+
+@router.post("/approvals/{approval_id}/approve")
+async def approve_and_dispatch(
+    approval_id: str,
+    approver: Principal = Depends(require_scope(SCOPE_DEVICES_APPROVE)),
+) -> dict:
+    """Consumes the approval (single-use, NP-7 property 3) and dispatches
+    the EXACT stored action instance -- never anything from this request's
+    body, so an approver cannot be tricked into approving a swapped action
+    (property 2). The store rejects an approver whose identity tuple equals
+    the requester's (property 1); the scope gate above enforces
+    privileged-above (devices.approve is not in default_scopes).
+    """
+    if not settings.mqtt_enabled or not settings.mqtt_hmac_key:
+        raise HTTPException(503, "mqtt not enabled/configured on this Brain instance")
+
+    approver_key = principal_key(
+        approver.user_id, approver.client_id, approver.metadata.get("key_id")
+    )
+    pending = _approvals.get(approval_id)
+    if pending is None:
+        raise HTTPException(404, "approval not found (unknown or already used)")
+
+    approval = _approvals.consume(approval_id, approver_key)
+    if approval is None:
+        raise HTTPException(
+            403, "approver must be a principal distinct from the requester"
+        )
+
+    outcome = await _dispatcher.dispatch(
+        node=approval.node,
+        skill=approval.skill,
+        params=approval.params,
+        risk=approval.risk,
+        requester=approval.requester,
+        key=settings.mqtt_hmac_key,
+        approval_id=approval.id,
+    )
+    if not outcome.ok:
+        raise HTTPException(504 if "respond" in outcome.detail else 502, outcome.detail)
+    return {
+        "approval_id": approval.id,
+        "node": approval.node,
+        "skill": approval.skill,
+        "result": outcome.result,
+    }
+
+
+@router.post(
+    "/approvals/{approval_id}/deny",
+    dependencies=[Depends(require_scope(SCOPE_DEVICES_APPROVE))],
+)
+def deny_approval(approval_id: str) -> dict:
+    if not _approvals.deny(approval_id):
+        raise HTTPException(404, "approval not found")
+    return {"denied": approval_id}
+
+
+@router.get(
+    "/audit",
+    dependencies=[Depends(require_scope(SCOPE_DEVICES_READ))],
+)
+def list_audit(limit: int = 50) -> list[dict]:
+    return _audit.list(limit=limit)
 
 
 @router.get(
