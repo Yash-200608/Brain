@@ -26,6 +26,9 @@ section, aside { background: var(--panel); border-radius: 8px; padding: 16px; ov
 #devices-panel .device-state {
   font-size: 0.8em; color: var(--muted); margin: 4px 0 0 18px; word-break: break-all;
 }
+#devices-panel .device-skills {
+  font-size: 0.8em; color: var(--accent); margin: 4px 0 0 18px; word-break: break-word;
+}
 #devices-panel .ping-btn {
   margin-left: auto; padding: 2px 10px; font-size: 0.8em; border-radius: 4px;
 }

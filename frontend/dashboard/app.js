@@ -152,6 +152,15 @@ function renderDevices(devices) {
       li.appendChild(state);
     }
 
+    // Priority #4 Milestone 4: declared skill capabilities (NP-5 -- these
+    // live declarations are what Brain plans from, so show them).
+    if (d.skills && d.skills.length > 0) {
+      const skills = document.createElement("div");
+      skills.className = "device-skills";
+      skills.textContent = `skills: ${d.skills.join(", ")}`;
+      li.appendChild(skills);
+    }
+
     $devices.appendChild(li);
   });
 }

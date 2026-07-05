@@ -124,8 +124,8 @@ def test_lifespan_skips_presence_subscription_when_key_missing(monkeypatch) -> N
             pass
 
     asyncio.run(run())
-    # Both presence and state are gated on the same key -- an empty list
-    # proves neither subscription leaked through.
+    # All three (presence/state/capabilities) are gated on the same key --
+    # an empty list proves none of them leaked through.
     assert subscriptions == []
 
 
@@ -154,3 +154,31 @@ def test_lifespan_subscribes_to_state_when_enabled_and_keyed(monkeypatch) -> Non
 
     asyncio.run(run())
     assert "chimera/+/state" in subscriptions
+
+
+def test_lifespan_subscribes_to_capabilities_when_enabled_and_keyed(monkeypatch) -> None:
+    """Priority #4 Milestone 4: the third DeviceStore-backed subscription."""
+    monkeypatch.setattr(settings, "mqtt_enabled", True)
+    monkeypatch.setattr(settings, "mqtt_hmac_key", "f" * 64)
+    from api.server import app, lifespan
+
+    subscriptions = []
+
+    class _RecordingClient(BrainMqttClient):
+        async def start(self):
+            return None
+
+        async def stop(self):
+            return None
+
+        async def subscribe(self, topic, handler):
+            subscriptions.append(topic)
+
+    set_mqtt_client(_RecordingClient())
+
+    async def run():
+        async with lifespan(app):
+            pass
+
+    asyncio.run(run())
+    assert "chimera/+/capabilities" in subscriptions

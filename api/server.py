@@ -32,13 +32,14 @@ async def lifespan(app: FastAPI):
     Default (mqtt_enabled=False): a true no-op -- no task spawned, no
     connection attempted. Priority #3 Milestone 2 gives Brain the
     capability to speak MQTT; Milestone 5 adds its first real consumer
-    (chimera/+/presence) and Milestone 7 adds a second (chimera/+/state) --
-    when enabled AND settings.mqtt_hmac_key is set, both subscribe and
+    (chimera/+/presence), Milestone 7 adds a second (chimera/+/state), and
+    Priority #4 Milestone 4 adds a third (chimera/+/capabilities) -- when
+    enabled AND settings.mqtt_hmac_key is set, all three subscribe and
     record inbound data into the same DeviceStore. If mqtt_enabled is true
     but no HMAC key is configured, the client still starts (other future
-    subscribers may not need signing) but both subscriptions are skipped
-    with a warning, rather than subscribing handlers that can structurally
-    never verify anything.
+    subscribers may not need signing) but all three subscriptions are
+    skipped with a warning, rather than subscribing handlers that can
+    structurally never verify anything.
     """
     mqtt_client = None
     if settings.mqtt_enabled:
@@ -48,6 +49,7 @@ async def lifespan(app: FastAPI):
 
         if settings.mqtt_hmac_key:
             from devices.store import DeviceStore
+            from mqtt.capabilities import make_capabilities_handler
             from mqtt.presence import make_presence_handler
             from mqtt.state import make_state_handler
 
@@ -60,10 +62,14 @@ async def lifespan(app: FastAPI):
                 "chimera/+/state",
                 make_state_handler(device_store, settings.mqtt_hmac_key),
             )
+            await mqtt_client.subscribe(
+                "chimera/+/capabilities",
+                make_capabilities_handler(device_store, settings.mqtt_hmac_key),
+            )
         else:
             logger.warning(
-                "mqtt_hmac_key not set -- skipping chimera/+/presence and "
-                "chimera/+/state subscriptions"
+                "mqtt_hmac_key not set -- skipping chimera/+/presence, "
+                "chimera/+/state, and chimera/+/capabilities subscriptions"
             )
     else:
         logger.debug("mqtt disabled -- lifespan is a no-op")

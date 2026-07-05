@@ -123,6 +123,37 @@ def test_get_device_known_node_round_trips_state_and_online(monkeypatch, tmp_pat
     assert body["is_online"] is True
 
 
+def test_get_device_exposes_declared_skills(monkeypatch, tmp_path) -> None:
+    """Priority #4 Milestone 4: declared skills survive the full HTTP round
+    trip -- the registry data the dispatch bridge (M7) will plan from is
+    inspectable via the same read API as state."""
+    set_identity_service(IdentityService(api_keys={"tok": "owner"}))
+    store = DeviceStore(db_path=str(tmp_path / "d.db"))
+    store.record_capabilities("node-a", ["phone.battery", "phone.tts"])
+    monkeypatch.setattr(devices_route, "_store", store)
+    client = TestClient(app)
+
+    r = client.get("/api/devices/node-a", headers={"Authorization": "Bearer tok"})
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["skills"] == ["phone.battery", "phone.tts"]
+    assert body["skills_declared_at"] is not None
+
+
+def test_device_without_declared_skills_reports_null(monkeypatch, tmp_path) -> None:
+    set_identity_service(IdentityService(api_keys={"tok": "owner"}))
+    store = DeviceStore(db_path=str(tmp_path / "d.db"))
+    store.mark_seen("node-a")
+    monkeypatch.setattr(devices_route, "_store", store)
+    client = TestClient(app)
+
+    r = client.get("/api/devices/node-a", headers={"Authorization": "Bearer tok"})
+
+    assert r.status_code == 200
+    assert r.json()["skills"] is None
+
+
 def test_get_device_unknown_node_returns_404(monkeypatch, tmp_path) -> None:
     set_identity_service(IdentityService(api_keys={"tok": "owner"}))
     monkeypatch.setattr(devices_route, "_store", DeviceStore(db_path=str(tmp_path / "d.db")))

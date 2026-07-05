@@ -13,6 +13,11 @@ class Device:
     # None distinguishes "never reported state" from "reported an empty dict".
     state: dict | None = None
     last_state_at: float | None = None
+    # None distinguishes "never declared capabilities" from "declared an
+    # empty skill list" -- same convention as state/last_state_at
+    # (Priority #4 Milestone 4).
+    skills: list[str] | None = None
+    skills_declared_at: float | None = None
 
     def is_online(self, threshold_s: float = 90.0) -> bool:
         return (time.time() - self.last_seen) < threshold_s

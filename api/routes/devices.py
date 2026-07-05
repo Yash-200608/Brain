@@ -36,6 +36,8 @@ def _to_out(d: Device) -> DeviceOut:
         last_seen=d.last_seen,
         state=d.state,
         last_state_at=d.last_state_at,
+        skills=d.skills,
+        skills_declared_at=d.skills_declared_at,
         is_online=d.is_online(),
     )
 

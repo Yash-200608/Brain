@@ -101,6 +101,142 @@ def test_device_has_no_state_until_recorded():
     assert refreshed.last_state_at is None
 
 
+# ---------------------------------------------------------------------- #
+# Device capabilities (Priority #4 Milestone 4)                            #
+# ---------------------------------------------------------------------- #
+
+
+def test_record_capabilities_upserts_and_bumps_last_seen_and_declared_at():
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        db = f.name
+    store = DeviceStore(db_path=db)
+
+    first = store.record_capabilities("node-a", ["phone.battery"])
+    assert first.skills == ["phone.battery"]
+    assert first.skills_declared_at is not None
+    assert first.last_seen is not None
+
+    time.sleep(0.01)
+    second = store.record_capabilities("node-a", ["phone.battery", "phone.tts"])
+    assert second.skills == ["phone.battery", "phone.tts"]
+    assert second.skills_declared_at > first.skills_declared_at
+    assert second.last_seen > first.last_seen
+    assert len(store.list()) == 1
+
+
+def test_record_capabilities_overwrites_wholesale_not_merges():
+    """A capability declaration is a complete snapshot, not an incremental
+    diff -- a second, smaller declaration must replace the first, not
+    union with it."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        db = f.name
+    store = DeviceStore(db_path=db)
+
+    store.record_capabilities("node-a", ["phone.battery", "phone.tts"])
+    updated = store.record_capabilities("node-a", ["phone.battery"])
+
+    assert updated.skills == ["phone.battery"]
+
+
+def test_record_capabilities_creates_device_if_missing():
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        db = f.name
+    store = DeviceStore(db_path=db)
+
+    store.record_capabilities("never-seen-before", [])
+
+    assert store.get("never-seen-before") is not None
+
+
+def test_capabilities_survive_presence_only_mark_seen():
+    """A bare presence signal must not clobber previously-declared skills."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        db = f.name
+    store = DeviceStore(db_path=db)
+
+    store.record_capabilities("node-a", ["phone.battery"])
+    time.sleep(0.01)
+    after = store.mark_seen("node-a")
+
+    assert after.skills == ["phone.battery"]
+
+
+def test_state_survives_capabilities_only_record():
+    """Conversely, declaring capabilities must not clobber previously
+    recorded state -- the two writes are independent fields."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        db = f.name
+    store = DeviceStore(db_path=db)
+
+    store.record_state("node-a", {"battery_pct": 87})
+    time.sleep(0.01)
+    after = store.record_capabilities("node-a", ["phone.battery"])
+
+    assert after.state == {"battery_pct": 87}
+    assert after.skills == ["phone.battery"]
+
+
+def test_device_has_no_skills_until_declared():
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        db = f.name
+    store = DeviceStore(db_path=db)
+    store.upsert(Device(node="pc-main"))
+
+    refreshed = store.get("pc-main")
+
+    assert refreshed.skills is None
+    assert refreshed.skills_declared_at is None
+
+
+def test_empty_skills_list_is_persisted_distinct_from_none():
+    """An empty list ("I have no skills right now") must round-trip as []
+    -- distinct from None ("never declared")."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        db = f.name
+    store = DeviceStore(db_path=db)
+
+    store.record_capabilities("node-a", [])
+
+    assert store.get("node-a").skills == []
+
+
+def test_schema_migration_adds_capabilities_columns_to_existing_db():
+    """Exercises the ALTER TABLE path directly: build a raw pre-Milestone-4
+    five-column database (node/first_seen/last_seen/state/last_state_at) by
+    hand, then confirm DeviceStore migrates it without error and preserves
+    existing data."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        db = f.name
+
+    conn = sqlite3.connect(db)
+    conn.execute(
+        """
+        CREATE TABLE devices (
+            node TEXT PRIMARY KEY, first_seen REAL, last_seen REAL,
+            state TEXT, last_state_at REAL
+        )
+        """
+    )
+    conn.execute(
+        "INSERT INTO devices VALUES (?, ?, ?, ?, ?)",
+        ("legacy-node", 1000.0, 2000.0, None, None),
+    )
+    conn.commit()
+    conn.close()
+
+    store = DeviceStore(db_path=db)
+    migrated = store.get("legacy-node")
+    assert migrated.first_seen == 1000.0
+    assert migrated.skills is None
+
+    updated = store.record_capabilities("legacy-node", ["pc.system.lock"])
+    assert updated.skills == ["pc.system.lock"]
+
+    # Re-opening must also be idempotent (no "duplicate column" error).
+    store2 = DeviceStore(db_path=db)
+    assert store2.get("legacy-node").skills == ["pc.system.lock"]
+
+
 def test_schema_migration_adds_state_columns_to_existing_db():
     """Exercises the ALTER TABLE path directly: build a raw pre-Milestone-7
     three-column database by hand, then confirm DeviceStore migrates it

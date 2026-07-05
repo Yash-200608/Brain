@@ -52,4 +52,6 @@ class DeviceOut(BaseModel):
     last_seen: float
     state: dict | None = None
     last_state_at: float | None = None
+    skills: list[str] | None = None
+    skills_declared_at: float | None = None
     is_online: bool
