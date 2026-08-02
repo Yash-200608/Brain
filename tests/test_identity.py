@@ -1,5 +1,7 @@
 from identity import (
     SCOPE_ADMIN,
+    SCOPE_DEVICES_APPROVE,
+    SCOPE_DEVICES_READ,
     SCOPE_MEMORY_WRITE,
     IdentityService,
     Principal,
@@ -41,6 +43,21 @@ def test_resolve_known_and_unknown_keys():
 def test_default_principal_is_owner():
     svc = IdentityService(api_keys={})
     assert svc.default_principal().user_id == "owner"
+
+
+def test_approver_keys_seed_approve_scope_only(monkeypatch):
+    """Priority #4 M10: approver_keys mint a distinct control-surface principal."""
+    monkeypatch.setattr("config.settings.api_keys", {"tok-user": "owner"})
+    monkeypatch.setattr("config.settings.approver_keys", {"tok-approver": "owner"})
+    svc = IdentityService()
+    user = svc.resolve("tok-user")
+    approver = svc.resolve("tok-approver")
+    assert user is not None
+    assert approver is not None
+    assert user.metadata["key_id"] != approver.metadata["key_id"]
+    assert approver.has_scope(SCOPE_DEVICES_APPROVE)
+    assert approver.has_scope(SCOPE_DEVICES_READ)
+    assert not approver.has_scope(SCOPE_MEMORY_WRITE)
 
 
 def test_register_and_revoke_key():

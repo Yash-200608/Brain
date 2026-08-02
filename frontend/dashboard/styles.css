@@ -15,32 +15,43 @@ header {
 .dot-ok { background: var(--accent); }
 .dot-bad { background: #f87171; }
 main {
-  display: grid; grid-template-columns: 1fr 320px 320px 320px;
-  gap: 16px; padding: 16px; height: calc(100vh - 60px);
+  display: grid; grid-template-columns: 1fr 200px 200px 280px 280px;
+  gap: 12px; padding: 12px; height: calc(100vh - 60px);
 }
-section, aside { background: var(--panel); border-radius: 8px; padding: 16px; overflow-y: auto; }
-#devices-panel li { list-style: none; margin: 0 0 10px 0; }
-#devices-panel .device-empty { color: var(--muted); list-style: none; }
+section, aside { background: var(--panel); border-radius: 8px; padding: 12px; overflow-y: auto; }
+aside h2 { font-size: 0.85rem; margin: 0 0 8px 0; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+#console-panel h2:not(:first-child) { margin-top: 16px; }
+#devices-panel li, #approvals-list li, #audit-list li { list-style: none; margin: 0 0 10px 0; }
+#devices-panel .device-empty, #approvals-list .console-empty, #audit-list .console-empty {
+  color: var(--muted); list-style: none;
+}
 #devices-panel .device-item { display: flex; flex-direction: column; }
 #devices-panel .device-item > div:first-child { display: flex; align-items: center; }
 #devices-panel .device-state {
   font-size: 0.8em; color: var(--muted); margin: 4px 0 0 18px; word-break: break-all;
 }
-#devices-panel .device-skills {
-  font-size: 0.8em; color: var(--accent); margin: 4px 0 0 18px; word-break: break-word;
+#devices-panel .device-skills { margin: 6px 0 0 18px; }
+#devices-panel .skill-row {
+  display: flex; align-items: center; gap: 6px; font-size: 0.8em; margin: 2px 0;
 }
-#devices-panel .ping-btn {
-  margin-left: auto; padding: 2px 10px; font-size: 0.8em; border-radius: 4px;
+#devices-panel .skill-row code { color: var(--accent); flex: 1; word-break: break-word; }
+#devices-panel .ping-btn, #devices-panel .skill-invoke-btn, #console-panel .console-btn {
+  padding: 2px 8px; font-size: 0.75em; border-radius: 4px; margin-left: auto;
 }
-#devices-panel .ping-btn:disabled { opacity: 0.5; cursor: default; }
-#devices-panel .device-ping-result {
-  font-size: 0.8em; margin: 4px 0 0 18px; word-break: break-all; min-height: 1em;
+#devices-panel .ping-btn:disabled, #devices-panel .skill-invoke-btn:disabled { opacity: 0.5; cursor: default; }
+#devices-panel .device-result, #console-panel .approval-result {
+  font-size: 0.8em; margin: 4px 0 0 0; word-break: break-all; min-height: 1em;
 }
-#devices-panel .ping-ok { color: var(--accent); }
-#devices-panel .ping-bad { color: #f87171; }
+#devices-panel .result-ok, #console-panel .result-ok { color: var(--accent); }
+#devices-panel .result-bad, #console-panel .result-bad { color: #f87171; }
+#console-panel .approval-item { font-size: 0.8em; padding: 8px; border: 1px solid #222; border-radius: 6px; }
+#console-panel .approval-meta { color: var(--muted); margin-bottom: 6px; }
+#console-panel .approval-actions { display: flex; gap: 6px; }
+#console-panel .audit-item { font-size: 0.75em; color: var(--muted); margin-bottom: 6px; word-break: break-all; }
 #messages { flex: 1; overflow-y: auto; height: 80%; }
 .msg-user { color: var(--accent); margin: 8px 0; }
 .msg-jarvis { color: var(--fg); margin: 8px 0; }
 #composer { display: flex; gap: 8px; }
 #prompt { flex: 1; padding: 10px; border-radius: 6px; border: 1px solid #333; background: #1a1f25; color: var(--fg); }
 button { padding: 10px 14px; background: var(--accent); color: #000; border: 0; border-radius: 6px; cursor: pointer; }
+#console-panel .console-btn.deny { background: #f87171; }

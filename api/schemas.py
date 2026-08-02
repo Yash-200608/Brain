@@ -46,6 +46,11 @@ class HealthOut(BaseModel):
     components: dict[str, str]
 
 
+class InvokeIn(BaseModel):
+    skill: str = Field(..., min_length=1)
+    params: dict[str, Any] = {}
+
+
 class DeviceOut(BaseModel):
     node: str
     first_seen: float

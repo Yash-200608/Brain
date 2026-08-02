@@ -7,6 +7,8 @@ const $input = document.getElementById("prompt");
 const $memory = document.getElementById("memory-list");
 const $goals = document.getElementById("goals-list");
 const $devices = document.getElementById("devices-list");
+const $approvals = document.getElementById("approvals-list");
+const $audit = document.getElementById("audit-list");
 const $status = document.getElementById("status");
 
 // Brain's auth is fail-closed (Priority #1 / Ecosystem Architecture §6.1):
@@ -16,6 +18,25 @@ const $status = document.getElementById("status");
 // it's entered once and kept only in this browser's localStorage, never
 // committed to source.
 const API_KEY_STORAGE_KEY = "jarvis_brain_api_key";
+// NP-7: approving is a distinct privilege (devices.approve) -- stored
+// separately from the ordinary requester key so the same browser session
+// can drive both roles without conflating principals.
+const APPROVER_KEY_STORAGE_KEY = "jarvis_brain_approver_key";
+
+// Default params for common skills when the operator invokes from the
+// dashboard console (editable in the prompt before dispatch).
+const DEFAULT_SKILL_PARAMS = {
+  "phone.tts": { text: "hello" },
+  "phone.sms.send": { phone: "+1", message: "test" },
+  "phone.whatsapp.send": { phone: "+1", message: "hi" },
+  "phone.notify": { title: "Test", content: "message" },
+  "phone.app.open": { app: "Settings" },
+  "phone.torch": { on: true },
+  "phone.vibrate": { ms: 200 },
+  "phone.ring": { seconds: 1 },
+  "pc.media.control": { command: "volume_up" },
+  "pc.shell.run": { command: "echo hello", confirmed: true },
+};
 
 function getApiKey() {
   let key = localStorage.getItem(API_KEY_STORAGE_KEY);
@@ -26,6 +47,19 @@ function getApiKey() {
       "yourself and register it server-side. Stored only in this browser."
     ) || "").trim();
     if (key) localStorage.setItem(API_KEY_STORAGE_KEY, key);
+  }
+  return key;
+}
+
+function getApproverKey() {
+  let key = localStorage.getItem(APPROVER_KEY_STORAGE_KEY);
+  if (!key) {
+    key = (window.prompt(
+      "Approver API key required for approve/deny actions.\n" +
+      "Use a token from JARVIS_APPROVER_KEYS (devices.approve scope). " +
+      "Stored only in this browser."
+    ) || "").trim();
+    if (key) localStorage.setItem(APPROVER_KEY_STORAGE_KEY, key);
   }
   return key;
 }
@@ -41,10 +75,19 @@ async function authenticatedFetch(url, options = {}) {
   if (key) headers["Authorization"] = `Bearer ${key}`;
   const r = await fetch(url, { ...options, headers });
   if (r.status === 401) {
-    // The stored key is missing, wrong, or revoked -- drop it so the next
-    // request re-prompts instead of retrying the same bad key forever.
     localStorage.removeItem(API_KEY_STORAGE_KEY);
     setConnectionStatus(false, "unauthorized -- API key rejected, will re-prompt on next request");
+  }
+  return r;
+}
+
+async function approverFetch(url, options = {}) {
+  const key = getApproverKey();
+  const headers = { ...(options.headers || {}) };
+  if (key) headers["Authorization"] = `Bearer ${key}`;
+  const r = await fetch(url, { ...options, headers });
+  if (r.status === 401 || r.status === 403) {
+    localStorage.removeItem(APPROVER_KEY_STORAGE_KEY);
   }
   return r;
 }
@@ -101,15 +144,17 @@ async function loadGoals() {
   } catch (e) { setConnectionStatus(false, "offline"); }
 }
 
-// Sticky per-node ping result, survives the periodic 30s refresh()'s
-// renderDevices() rebuild -- without this, a ping's result could be wiped
-// by the next poll tick before the user finishes reading it, undermining
-// the dashboard's job of demonstrating the round trip actually happened.
 const lastPingResult = new Map();
+const lastInvokeResult = new Map();
 
-// Priority #3 Milestone 11: read-only view of Brain's device registry
-// (GET /api/devices/, added Milestone 9) -- proves the execution spine's
-// Dashboard/API -> Brain read path end-to-end.
+function setStickyResult(map, key, className, text, el) {
+  map.set(key, { className, text });
+  if (el && document.body.contains(el)) {
+    el.className = className;
+    el.textContent = text;
+  }
+}
+
 function renderDevices(devices) {
   $devices.innerHTML = "";
   if (devices.length === 0) {
@@ -130,20 +175,21 @@ function renderDevices(devices) {
     row.appendChild(dot);
     row.appendChild(document.createTextNode(` ${d.node} `));
 
-    const resultEl = document.createElement("div");
-    const lastResult = lastPingResult.get(d.node);
-    resultEl.className = lastResult ? lastResult.className : "device-ping-result";
-    resultEl.textContent = lastResult ? lastResult.text : "";
+    const pingResultEl = document.createElement("div");
+    const pingKey = `${d.node}:ping`;
+    const lastPing = lastPingResult.get(pingKey);
+    pingResultEl.className = lastPing ? lastPing.className : "device-result";
+    pingResultEl.textContent = lastPing ? lastPing.text : "";
 
     const pingBtn = document.createElement("button");
     pingBtn.className = "ping-btn";
     pingBtn.type = "button";
     pingBtn.textContent = "Ping";
-    pingBtn.addEventListener("click", () => pingDevice(d.node, pingBtn, resultEl));
+    pingBtn.addEventListener("click", () => pingDevice(d.node, pingBtn, pingResultEl, pingKey));
     row.appendChild(pingBtn);
 
     li.appendChild(row);
-    li.appendChild(resultEl);
+    li.appendChild(pingResultEl);
 
     if (d.state && Object.keys(d.state).length > 0) {
       const state = document.createElement("div");
@@ -152,13 +198,34 @@ function renderDevices(devices) {
       li.appendChild(state);
     }
 
-    // Priority #4 Milestone 4: declared skill capabilities (NP-5 -- these
-    // live declarations are what Brain plans from, so show them).
     if (d.skills && d.skills.length > 0) {
-      const skills = document.createElement("div");
-      skills.className = "device-skills";
-      skills.textContent = `skills: ${d.skills.join(", ")}`;
-      li.appendChild(skills);
+      const skillsWrap = document.createElement("div");
+      skillsWrap.className = "device-skills";
+      d.skills.forEach((skill) => {
+        const skillRow = document.createElement("div");
+        skillRow.className = "skill-row";
+        const code = document.createElement("code");
+        code.textContent = skill;
+        skillRow.appendChild(code);
+
+        const invokeResultEl = document.createElement("div");
+        const invokeKey = `${d.node}:${skill}`;
+        const lastInvoke = lastInvokeResult.get(invokeKey);
+        invokeResultEl.className = lastInvoke ? lastInvoke.className : "device-result";
+        invokeResultEl.textContent = lastInvoke ? lastInvoke.text : "";
+
+        const invokeBtn = document.createElement("button");
+        invokeBtn.className = "skill-invoke-btn";
+        invokeBtn.type = "button";
+        invokeBtn.textContent = "Invoke";
+        invokeBtn.addEventListener("click", () =>
+          invokeSkill(d.node, skill, invokeBtn, invokeResultEl, invokeKey)
+        );
+        skillRow.appendChild(invokeBtn);
+        skillsWrap.appendChild(skillRow);
+        skillsWrap.appendChild(invokeResultEl);
+      });
+      li.appendChild(skillsWrap);
     }
 
     $devices.appendChild(li);
@@ -175,24 +242,9 @@ async function loadDevices() {
   } catch (e) { setConnectionStatus(false, "offline"); }
 }
 
-// Priority #3 Milestone 12 (Execution Spine Capstone): the dashboard's
-// demonstration of the complete Dashboard/API -> Brain -> MQTT -> JARVIS
-// -> Response -> Brain -> Dashboard/API path via POST /api/devices/{node}/ping.
-async function pingDevice(node, buttonEl, resultEl) {
-  const setResult = (className, text) => {
-    lastPingResult.set(node, { className, text });
-    // The element may have already been replaced by a refresh() tick that
-    // fired while this request was in flight -- only touch it if it's
-    // still the one currently in the DOM (renderDevices() reads the map
-    // fresh on every rebuild, so the result isn't lost either way).
-    if (document.body.contains(resultEl)) {
-      resultEl.className = className;
-      resultEl.textContent = text;
-    }
-  };
-
+async function pingDevice(node, buttonEl, resultEl, resultKey) {
   buttonEl.disabled = true;
-  setResult("device-ping-result", "pinging…");
+  setStickyResult(lastPingResult, resultKey, "device-result", "pinging…", resultEl);
   try {
     const r = await authenticatedFetch(
       `${API}/api/devices/${encodeURIComponent(node)}/ping`,
@@ -200,15 +252,205 @@ async function pingDevice(node, buttonEl, resultEl) {
     );
     const body = await r.json().catch(() => ({}));
     if (r.ok) {
-      setResult("device-ping-result ping-ok", `ping ok: ${JSON.stringify(body.result)}`);
+      setStickyResult(
+        lastPingResult, resultKey, "device-result result-ok",
+        `ping ok: ${JSON.stringify(body.result)}`, resultEl
+      );
     } else {
-      setResult("device-ping-result ping-bad", `ping failed (${r.status}): ${body.detail || r.statusText}`);
+      setStickyResult(
+        lastPingResult, resultKey, "device-result result-bad",
+        `ping failed (${r.status}): ${body.detail || r.statusText}`, resultEl
+      );
     }
   } catch (e) {
-    setResult("device-ping-result ping-bad", `ping error: ${e}`);
+    setStickyResult(lastPingResult, resultKey, "device-result result-bad", `ping error: ${e}`, resultEl);
   } finally {
     if (document.body.contains(buttonEl)) buttonEl.disabled = false;
   }
+}
+
+async function invokeSkill(node, skill, buttonEl, resultEl, resultKey) {
+  const defaults = DEFAULT_SKILL_PARAMS[skill] || {};
+  const input = window.prompt(`Params JSON for ${skill}:`, JSON.stringify(defaults));
+  if (input === null) return;
+
+  let params = {};
+  try {
+    params = JSON.parse(input || "{}");
+  } catch (e) {
+    setStickyResult(
+      lastInvokeResult, resultKey, "device-result result-bad",
+      `invalid JSON: ${e}`, resultEl
+    );
+    return;
+  }
+
+  buttonEl.disabled = true;
+  setStickyResult(lastInvokeResult, resultKey, "device-result", "invoking…", resultEl);
+  try {
+    const r = await authenticatedFetch(
+      `${API}/api/devices/${encodeURIComponent(node)}/invoke`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ skill, params }),
+      }
+    );
+    const body = await r.json().catch(() => ({}));
+    if (r.ok && body.status === "approval_required") {
+      setStickyResult(
+        lastInvokeResult, resultKey, "device-result result-ok",
+        `approval required (risk ${body.risk}): ${body.approval_id}`, resultEl
+      );
+      loadApprovals();
+      loadAudit();
+    } else if (r.ok) {
+      setStickyResult(
+        lastInvokeResult, resultKey, "device-result result-ok",
+        `ok: ${JSON.stringify(body.result)}`, resultEl
+      );
+      loadAudit();
+    } else {
+      setStickyResult(
+        lastInvokeResult, resultKey, "device-result result-bad",
+        `invoke failed (${r.status}): ${body.detail || r.statusText}`, resultEl
+      );
+    }
+  } catch (e) {
+    setStickyResult(lastInvokeResult, resultKey, "device-result result-bad", `invoke error: ${e}`, resultEl);
+  } finally {
+    if (document.body.contains(buttonEl)) buttonEl.disabled = false;
+  }
+}
+
+function renderApprovals(items) {
+  $approvals.innerHTML = "";
+  if (!items.length) {
+    const li = document.createElement("li");
+    li.className = "console-empty";
+    li.textContent = "no pending approvals";
+    $approvals.appendChild(li);
+    return;
+  }
+  items.forEach((a) => {
+    const li = document.createElement("li");
+    li.className = "approval-item";
+    const meta = document.createElement("div");
+    meta.className = "approval-meta";
+    meta.textContent = `${a.skill} on ${a.node} (risk ${a.risk})`;
+    li.appendChild(meta);
+
+    const detail = document.createElement("div");
+    detail.textContent = `id: ${a.id} · params: ${JSON.stringify(a.params)}`;
+    li.appendChild(detail);
+
+    const resultEl = document.createElement("div");
+    resultEl.className = "approval-result";
+    li.appendChild(resultEl);
+
+    const actions = document.createElement("div");
+    actions.className = "approval-actions";
+    const approveBtn = document.createElement("button");
+    approveBtn.className = "console-btn";
+    approveBtn.type = "button";
+    approveBtn.textContent = "Approve";
+    approveBtn.addEventListener("click", () => approvePending(a.id, approveBtn, resultEl));
+    const denyBtn = document.createElement("button");
+    denyBtn.className = "console-btn deny";
+    denyBtn.type = "button";
+    denyBtn.textContent = "Deny";
+    denyBtn.addEventListener("click", () => denyPending(a.id, denyBtn, resultEl));
+    actions.appendChild(approveBtn);
+    actions.appendChild(denyBtn);
+    li.appendChild(actions);
+    $approvals.appendChild(li);
+  });
+}
+
+async function loadApprovals() {
+  try {
+    const r = await authenticatedFetch(`${API}/api/devices/approvals`);
+    if (!r.ok) return;
+    renderApprovals(await r.json());
+  } catch (e) { /* offline */ }
+}
+
+async function approvePending(approvalId, buttonEl, resultEl) {
+  buttonEl.disabled = true;
+  resultEl.textContent = "approving…";
+  try {
+    const r = await approverFetch(
+      `${API}/api/devices/approvals/${encodeURIComponent(approvalId)}/approve`,
+      { method: "POST" }
+    );
+    const body = await r.json().catch(() => ({}));
+    if (r.ok) {
+      resultEl.className = "approval-result result-ok";
+      resultEl.textContent = `approved: ${JSON.stringify(body.result)}`;
+      loadApprovals();
+      loadAudit();
+    } else {
+      resultEl.className = "approval-result result-bad";
+      resultEl.textContent = `approve failed (${r.status}): ${body.detail || r.statusText}`;
+    }
+  } catch (e) {
+    resultEl.className = "approval-result result-bad";
+    resultEl.textContent = `approve error: ${e}`;
+  } finally {
+    if (document.body.contains(buttonEl)) buttonEl.disabled = false;
+  }
+}
+
+async function denyPending(approvalId, buttonEl, resultEl) {
+  buttonEl.disabled = true;
+  resultEl.textContent = "denying…";
+  try {
+    const r = await approverFetch(
+      `${API}/api/devices/approvals/${encodeURIComponent(approvalId)}/deny`,
+      { method: "POST" }
+    );
+    const body = await r.json().catch(() => ({}));
+    if (r.ok) {
+      resultEl.className = "approval-result result-ok";
+      resultEl.textContent = `denied: ${body.denied || approvalId}`;
+      loadApprovals();
+    } else {
+      resultEl.className = "approval-result result-bad";
+      resultEl.textContent = `deny failed (${r.status}): ${body.detail || r.statusText}`;
+    }
+  } catch (e) {
+    resultEl.className = "approval-result result-bad";
+    resultEl.textContent = `deny error: ${e}`;
+  } finally {
+    if (document.body.contains(buttonEl)) buttonEl.disabled = false;
+  }
+}
+
+function renderAudit(rows) {
+  $audit.innerHTML = "";
+  if (!rows.length) {
+    const li = document.createElement("li");
+    li.className = "console-empty";
+    li.textContent = "no dispatch events yet";
+    $audit.appendChild(li);
+    return;
+  }
+  rows.forEach((row) => {
+    const li = document.createElement("li");
+    li.className = "audit-item";
+    li.textContent = `${row.outcome} · ${row.skill} @ ${row.node} · risk ${row.risk}`;
+    if (row.approval_id) li.textContent += ` · approval ${row.approval_id}`;
+    if (row.result) li.textContent += ` · ${JSON.stringify(row.result)}`;
+    $audit.appendChild(li);
+  });
+}
+
+async function loadAudit() {
+  try {
+    const r = await authenticatedFetch(`${API}/api/devices/audit?limit=30`);
+    if (!r.ok) return;
+    renderAudit(await r.json());
+  } catch (e) { /* offline */ }
 }
 
 $form.addEventListener("submit", (e) => {
@@ -222,6 +464,8 @@ $form.addEventListener("submit", (e) => {
 function refresh() {
   loadGoals();
   loadDevices();
+  loadApprovals();
+  loadAudit();
 }
 
 refresh();

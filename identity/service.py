@@ -39,6 +39,24 @@ class IdentityService:
                     scopes=default_scopes(),
                     metadata={"key_id": key_id},
                 )
+        # Approver keys (Priority #4 M10): the env-configurable way to mint
+        # an NP-7 approver -- register_key() from a separate process cannot
+        # reach a running server's in-memory service, so this must be
+        # seedable at construction. Approve + read only, never the full
+        # default scope set (an approver key is a control surface, not a
+        # general client).
+        approver_seed = settings.approver_keys if api_keys is None else {}
+        for token, user_id in approver_seed.items():
+            if token and token not in self._keys:
+                from identity.models import SCOPE_DEVICES_APPROVE, SCOPE_DEVICES_READ
+
+                key_id = hashlib.sha256(token.encode()).hexdigest()[:12]
+                self._keys[token] = Principal(
+                    user_id=user_id,
+                    client_id="api",
+                    scopes=frozenset({SCOPE_DEVICES_APPROVE, SCOPE_DEVICES_READ}),
+                    metadata={"key_id": key_id},
+                )
 
     def default_principal(self) -> Principal:
         """The principal used when no credential is presented (single-user mode)."""

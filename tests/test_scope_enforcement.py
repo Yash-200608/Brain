@@ -14,10 +14,12 @@ from __future__ import annotations
 
 from starlette.testclient import TestClient
 
+from api.middleware.rate_limit import RateLimitMiddleware
 from api.server import app
 from identity import (
     SCOPE_ADMIN,
     SCOPE_DEVICES_ACTION,
+    SCOPE_DEVICES_APPROVE,
     SCOPE_DEVICES_READ,
     SCOPE_GOALS,
     SCOPE_MEMORY_READ,
@@ -32,6 +34,15 @@ from identity import (
 
 def teardown_function() -> None:
     set_identity_service(None)
+    # Scope tests fire many authenticated requests through one TestClient IP;
+    # clear the shared app's rate-limit buckets so later tests in this module
+    # (and the full suite) do not inherit a 429 from the route sweep above.
+    stack = app.middleware_stack
+    while stack is not None:
+        if isinstance(stack, RateLimitMiddleware):
+            with stack._lock:
+                stack._buckets.clear()
+        stack = getattr(stack, "app", None)
 
 
 def _client_with_scopes(*scopes: str) -> TestClient:
@@ -58,8 +69,13 @@ _ROUTES = [
     ("get", "/api/sessions/", SCOPE_SESSIONS),
     ("get", "/api/sessions/some-id/turns", SCOPE_SESSIONS),
     ("get", "/api/devices/", SCOPE_DEVICES_READ),
+    ("get", "/api/devices/approvals", SCOPE_DEVICES_READ),
+    ("get", "/api/devices/audit", SCOPE_DEVICES_READ),
     ("get", "/api/devices/some-node", SCOPE_DEVICES_READ),
     ("post", "/api/devices/some-node/ping", SCOPE_DEVICES_ACTION),
+    ("post", "/api/devices/some-node/invoke", SCOPE_DEVICES_ACTION),
+    ("post", "/api/devices/approvals/some-approval/approve", SCOPE_DEVICES_APPROVE),
+    ("post", "/api/devices/approvals/some-approval/deny", SCOPE_DEVICES_APPROVE),
 ]
 
 # A scope that no route requires -- holding only this must be rejected

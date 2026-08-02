@@ -54,6 +54,12 @@ class Settings(BaseSettings):
     # Identity (V2 foundation — non-enforcing)
     default_user_id: str = _t("identity", "default_user_id", "owner")
     api_keys: dict[str, str] = _t("identity", "api_keys", {})
+    # Approver keys (Priority #4 Milestone 10): token -> user_id, seeded
+    # with SCOPE_DEVICES_APPROVE (+ devices.read). Kept separate from
+    # api_keys because approval privilege must never be grantable via the
+    # ordinary key list (NP-7: approvers are privileged above requesters).
+    # Env: JARVIS_APPROVER_KEYS={"<token>": "owner"}
+    approver_keys: dict[str, str] = _t("identity", "approver_keys", {})
 
     # Sessions (V2 foundation)
     max_sessions: int = _t("sessions", "max_sessions", 256)

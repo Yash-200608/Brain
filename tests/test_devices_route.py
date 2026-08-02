@@ -11,6 +11,9 @@ from fastapi.testclient import TestClient
 from api.routes import devices as devices_route
 from api.server import app
 from config import settings
+from devices.audit import DispatchAudit
+from devices.approvals import ApprovalStore
+from devices.dispatcher import DeviceDispatcher
 from devices.store import DeviceStore
 from identity import IdentityService, set_identity_service
 from mqtt.client import BrainMqttClient, set_mqtt_client
@@ -212,6 +215,106 @@ def test_ping_happy_path_returns_verified_response(monkeypatch) -> None:
     body = r.json()
     assert body["node"] == NODE
     assert body["result"] == {"pong": True}
+
+
+def test_invoke_requires_auth() -> None:
+    set_identity_service(IdentityService(api_keys={"tok": "owner"}))
+    client = TestClient(app)
+
+    r = client.post(
+        f"/api/devices/{NODE}/invoke",
+        json={"skill": "phone.battery", "params": {}},
+    )
+
+    assert r.status_code == 401
+
+
+def test_invoke_returns_503_when_mqtt_not_enabled(monkeypatch) -> None:
+    set_identity_service(IdentityService(api_keys={"tok": "owner"}))
+    monkeypatch.setattr(settings, "mqtt_enabled", False)
+    client = TestClient(app)
+
+    r = client.post(
+        f"/api/devices/{NODE}/invoke",
+        headers={"Authorization": "Bearer tok"},
+        json={"skill": "phone.battery", "params": {}},
+    )
+
+    assert r.status_code == 503
+
+
+def test_invoke_low_risk_skill_dispatches(monkeypatch, tmp_path) -> None:
+    set_identity_service(IdentityService(api_keys={"tok": "owner"}))
+    monkeypatch.setattr(settings, "mqtt_enabled", True)
+    monkeypatch.setattr(settings, "mqtt_hmac_key", KEY)
+    db = str(tmp_path / "d.db")
+    store = DeviceStore(db_path=db)
+    store.record_capabilities(NODE, ["phone.battery"])
+    audit = DispatchAudit(db_path=db)
+    dispatcher = DeviceDispatcher(store=store, audit=audit)
+    monkeypatch.setattr(devices_route, "_store", store)
+    monkeypatch.setattr(devices_route, "_audit", audit)
+    monkeypatch.setattr(devices_route, "_dispatcher", dispatcher)
+
+    def build(cmd_payload):
+        action = cmd_payload.get("action")
+        response = ChimeraEnvelope(
+            node=NODE, verb="response", action=action,
+            params={"ok": True, "level": 91},
+            request_id=cmd_payload.get("request_id"),
+        )
+        return sign(response, KEY).model_dump()
+
+    set_mqtt_client(_make_client_with_simulated_responder(build))
+    client = TestClient(app)
+
+    r = client.post(
+        f"/api/devices/{NODE}/invoke",
+        headers={"Authorization": "Bearer tok"},
+        json={"skill": "phone.battery", "params": {}},
+    )
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "responded"
+    assert body["skill"] == "phone.battery"
+    assert body["result"] == {"ok": True, "level": 91}
+
+
+def test_invoke_high_risk_creates_approval_without_dispatch(monkeypatch, tmp_path) -> None:
+    set_identity_service(IdentityService(api_keys={"tok": "owner"}))
+    monkeypatch.setattr(settings, "mqtt_enabled", True)
+    monkeypatch.setattr(settings, "mqtt_hmac_key", KEY)
+    db = str(tmp_path / "d.db")
+    store = DeviceStore(db_path=db)
+    store.record_capabilities(NODE, ["pc.shell.run"])
+    approvals = ApprovalStore(db_path=db)
+    monkeypatch.setattr(devices_route, "_store", store)
+    monkeypatch.setattr(devices_route, "_approvals", approvals)
+
+    published = []
+
+    async def track_publish(topic, payload, *, qos=None, retain=False):
+        published.append(topic)
+
+    client = BrainMqttClient(host="localhost", port=1883, client_id="test-no-dispatch")
+    client.publish = track_publish  # type: ignore[method-assign]
+    set_mqtt_client(client)
+    client = TestClient(app)
+
+    r = client.post(
+        f"/api/devices/{NODE}/invoke",
+        headers={"Authorization": "Bearer tok"},
+        json={"skill": "pc.shell.run", "params": {"command": "whoami"}},
+    )
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "approval_required"
+    assert body["risk"] == 2
+    assert body["approval_id"]
+    assert approvals.get(body["approval_id"]) is not None
+    assert published == []
 
 
 def test_ping_returns_504_on_timeout(monkeypatch) -> None:

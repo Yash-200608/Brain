@@ -18,12 +18,13 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 
 from api.deps import require_scope
-from api.schemas import DeviceOut
+from api.schemas import DeviceOut, InvokeIn
 from config import settings
 from devices.approvals import ApprovalStore, principal_key
 from devices.audit import DispatchAudit
 from devices.dispatcher import DeviceDispatcher
 from devices.models import Device
+from devices.policy import skill_risk_int
 from devices.store import DeviceStore
 from identity import (
     SCOPE_DEVICES_ACTION,
@@ -160,6 +161,52 @@ def get_device(node: str) -> DeviceOut:
     if d is None:
         raise HTTPException(404, "device not found")
     return _to_out(d)
+
+
+@router.post("/{node}/invoke")
+async def invoke_skill(
+    node: str,
+    payload: InvokeIn,
+    requester: Principal = Depends(require_scope(SCOPE_DEVICES_ACTION)),
+) -> dict:
+    """Direct skill invocation (Priority #4 Milestone 10) -- the dashboard
+    command console's surface onto the SAME machinery as the NL path:
+    risk classified by Brain's policy first (NP-7 property 2); risk >= 2
+    creates a pending approval (202) for a distinct approver instead of
+    executing; anything else dispatches through the shared dispatcher,
+    which enforces live declarations (NP-5) and writes the audit trail.
+    """
+    if not settings.mqtt_enabled or not settings.mqtt_hmac_key:
+        raise HTTPException(503, "mqtt not enabled/configured on this Brain instance")
+
+    requester_key = principal_key(
+        requester.user_id, requester.client_id, requester.metadata.get("key_id")
+    )
+    risk = skill_risk_int(payload.skill)
+
+    if risk >= 2:
+        approval = _approvals.request(
+            node=node, skill=payload.skill, params=payload.params,
+            risk=risk, requester=requester_key,
+        )
+        _audit.record(
+            requester=requester_key, node=node, skill=payload.skill,
+            params=payload.params, risk=risk, outcome="approval_requested",
+            approval_id=approval.id,
+        )
+        return {
+            "status": "approval_required",
+            "approval_id": approval.id,
+            "risk": risk,
+        }
+
+    outcome = await _dispatcher.dispatch(
+        node=node, skill=payload.skill, params=payload.params, risk=risk,
+        requester=requester_key, key=settings.mqtt_hmac_key,
+    )
+    if not outcome.ok:
+        raise HTTPException(504 if "respond" in outcome.detail else 502, outcome.detail)
+    return {"status": "responded", "node": node, "skill": payload.skill, "result": outcome.result}
 
 
 @router.post(
