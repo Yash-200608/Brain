@@ -17,6 +17,21 @@ function Test-PortListening($port) {
     return [bool](netstat -ano | Select-String ":$port\s" | Select-String "LISTENING")
 }
 
+function Stop-DuplicateChimeraProcesses {
+    $existing = Get-CimInstance Win32_Process -Filter "name='python.exe'" | Where-Object {
+        $_.CommandLine -match 'main\.py api' -or $_.CommandLine -match 'run_chimera_node\.py'
+    }
+    if ($existing) {
+        Write-Host "Stopping existing Brain/node processes (prevent duplicate MQTT clients)"
+        $existing | ForEach-Object {
+            Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+        }
+        Start-Sleep -Seconds 2
+    }
+}
+
+Stop-DuplicateChimeraProcesses
+
 if (-not (Test-PortListening 1883)) {
     if (Test-Path $Mosquitto) {
         Write-Host "Starting Mosquitto on :1883"
@@ -32,14 +47,10 @@ if (-not (Test-Path $BrainVenv)) {
     $BrainVenv = "python"
 }
 
-if (-not (Test-PortListening 8000)) {
-    Write-Host "Starting Brain API on :8000 (python main.py api)"
-    Start-Process -FilePath $BrainVenv -ArgumentList "main.py", "api" `
-        -WorkingDirectory $BrainRoot -WindowStyle Minimized
-    Start-Sleep -Seconds 4
-} else {
-    Write-Host "Brain API already listening on :8000"
-}
+Write-Host "Starting Brain API on :8000 (python main.py api)"
+Start-Process -FilePath $BrainVenv -ArgumentList "main.py", "api" `
+    -WorkingDirectory $BrainRoot -WindowStyle Minimized
+Start-Sleep -Seconds 4
 
 if (-not (Test-PortListening 5173)) {
     Write-Host "Starting dashboard on http://localhost:5173"
