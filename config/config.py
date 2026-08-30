@@ -105,10 +105,12 @@ class Settings(BaseSettings):
     mqtt_hmac_key: str | None = _t("mqtt", "hmac_key", None)
 
     # Trial (Priority #4 Milestone 11)
-    # ISO-8601 or unix float — events before this are excluded from trial reports.
+    # Unix timestamp — events before this are excluded from trial reports.
+    # Env: JARVIS_TRIAL_START_TS=1735567890
     trial_start_ts: float | None = None
     # Path to JARVIS legacy_invocation_log JSONL (§3.6(2)(a) adoption proof).
-    trial_legacy_log_path: str | None = _t("trial", "legacy_log_path", None)
+    # Env: JARVIS_TRIAL_LEGACY_LOG_PATH=C:\Users\Hp\.chimera\legacy_invocations.jsonl
+    trial_legacy_log_path: str | None = None
 
 
 settings = Settings()
