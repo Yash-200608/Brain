@@ -9,6 +9,7 @@ const $goals = document.getElementById("goals-list");
 const $devices = document.getElementById("devices-list");
 const $approvals = document.getElementById("approvals-list");
 const $audit = document.getElementById("audit-list");
+const $trial = document.getElementById("trial-summary");
 const $status = document.getElementById("status");
 
 // Brain's auth is fail-closed (Priority #1 / Ecosystem Architecture §6.1):
@@ -453,6 +454,41 @@ async function loadAudit() {
   } catch (e) { /* offline */ }
 }
 
+function renderTrial(report) {
+  $trial.innerHTML = "";
+  if (!report) return;
+  const cov = report.criteria?.command_coverage;
+  const leg = report.criteria?.legacy_zero_for_covered;
+  const items = [
+    `coverage: ${cov ? "ok" : "incomplete"}`,
+    `legacy zero: ${leg ? "ok" : "violations or missing log"}`,
+    `spine events: ${report.spine?.total_events ?? 0}`,
+    `legacy invocations: ${report.legacy?.total_invocations ?? 0}`,
+  ];
+  items.forEach((text) => {
+    const li = document.createElement("li");
+    li.className = "trial-item";
+    li.textContent = text;
+    $trial.appendChild(li);
+  });
+  if (report.confirmed_classes) {
+    Object.entries(report.confirmed_classes).forEach(([cls, row]) => {
+      const li = document.createElement("li");
+      li.className = "trial-item";
+      li.textContent = `${cls}: spine ${row.spine_success}/${row.spine_any} · legacy ${row.legacy}`;
+      $trial.appendChild(li);
+    });
+  }
+}
+
+async function loadTrial() {
+  try {
+    const r = await authenticatedFetch(`${API}/api/devices/trial-report`);
+    if (!r.ok) return;
+    renderTrial(await r.json());
+  } catch (e) { /* offline */ }
+}
+
 $form.addEventListener("submit", (e) => {
   e.preventDefault();
   const q = $input.value.trim();
@@ -466,6 +502,7 @@ function refresh() {
   loadDevices();
   loadApprovals();
   loadAudit();
+  loadTrial();
 }
 
 refresh();

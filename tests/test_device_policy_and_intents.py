@@ -5,7 +5,7 @@ deterministic device-intent mapper.
 from __future__ import annotations
 
 from core.device_intents import map_device_intent
-from devices.policy import skill_risk_int
+from devices.policy import skill_dispatch_timeout, skill_risk_int
 
 
 # ---------------------------------------------------------------------- #
@@ -28,6 +28,12 @@ def test_unknown_skill_fails_closed_to_approval_required() -> None:
 def test_dangerous_keywords_fail_closed() -> None:
     assert skill_risk_int("pc.files.delete") == 2
     assert skill_risk_int("node.shutdown.now") == 2
+
+
+def test_dispatch_timeout_covers_slow_phone_skills() -> None:
+    assert skill_dispatch_timeout("phone.battery") == 15.0
+    assert skill_dispatch_timeout("phone.tts") == 65.0
+    assert skill_dispatch_timeout("phone.location") == 35.0
 
 
 # ---------------------------------------------------------------------- #

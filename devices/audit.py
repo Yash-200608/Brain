@@ -97,3 +97,46 @@ class DispatchAudit:
             }
             for r in rows
         ]
+
+    def trial_stats(self, since_ts: float | None = None) -> dict:
+        """Aggregate counters for M11 trial instrumentation."""
+        clause = ""
+        params: tuple = ()
+        if since_ts is not None:
+            clause = " WHERE ts >= ?"
+            params = (since_ts,)
+
+        with sqlite3.connect(self.db_path) as conn:
+            rows = conn.execute(
+                f"SELECT ts, skill, outcome FROM dispatch_audit{clause} ORDER BY ts",
+                params,
+            ).fetchall()
+
+        from trial.confirmed_classes import normalize_skill
+
+        by_outcome: dict[str, int] = {}
+        by_skill: dict[str, int] = {}
+        success_by_class: dict[str, int] = {}
+        any_by_class: dict[str, int] = {}
+        first_ts: float | None = None
+        last_ts: float | None = None
+
+        for ts, skill, outcome in rows:
+            first_ts = ts if first_ts is None else min(first_ts, ts)
+            last_ts = ts if last_ts is None else max(last_ts, ts)
+            by_outcome[outcome] = by_outcome.get(outcome, 0) + 1
+            by_skill[skill] = by_skill.get(skill, 0) + 1
+            cls = normalize_skill(skill)
+            any_by_class[cls] = any_by_class.get(cls, 0) + 1
+            if outcome == "responded":
+                success_by_class[cls] = success_by_class.get(cls, 0) + 1
+
+        return {
+            "total": len(rows),
+            "first_ts": first_ts,
+            "last_ts": last_ts,
+            "by_outcome": by_outcome,
+            "by_skill": by_skill,
+            "success_by_class": success_by_class,
+            "any_by_class": any_by_class,
+        }

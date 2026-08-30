@@ -71,6 +71,7 @@ _ROUTES = [
     ("get", "/api/devices/", SCOPE_DEVICES_READ),
     ("get", "/api/devices/approvals", SCOPE_DEVICES_READ),
     ("get", "/api/devices/audit", SCOPE_DEVICES_READ),
+    ("get", "/api/devices/trial-report", SCOPE_DEVICES_READ),
     ("get", "/api/devices/some-node", SCOPE_DEVICES_READ),
     ("post", "/api/devices/some-node/ping", SCOPE_DEVICES_ACTION),
     ("post", "/api/devices/some-node/invoke", SCOPE_DEVICES_ACTION),

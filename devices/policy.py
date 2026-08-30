@@ -48,3 +48,17 @@ def skill_risk_int(skill: str) -> int:
     if any(tok in lowered for tok in ("shell", "delete", "shutdown", "wipe", "kill")):
         return 2
     return 2  # unknown -> approval-required, never permissive
+
+
+# Brain-side MQTT round-trip wait — must cover the node skill's own subprocess
+# timeout (e.g. phone.tts allows 60s on the node). Default 15s for fast skills.
+_SKILL_DISPATCH_TIMEOUT: dict[str, float] = {
+    "phone.tts": 65.0,
+    "phone.location": 35.0,
+    "phone.ring": 70.0,
+}
+
+
+def skill_dispatch_timeout(skill: str, default: float = 15.0) -> float:
+    """Seconds Brain waits for a signed spine response for `skill`."""
+    return _SKILL_DISPATCH_TIMEOUT.get(skill, default)

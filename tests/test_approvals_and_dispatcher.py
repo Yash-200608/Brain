@@ -216,3 +216,19 @@ def test_resolve_node_uses_live_declarations() -> None:
     # NP-5's removal property: retract the declaration, resolution follows.
     store.record_capabilities("jarvis-core-pc", [])
     assert dispatcher.resolve_node("phone.battery") is None
+
+
+def test_resolve_node_prefers_platform_and_online() -> None:
+    dispatcher, store, _ = _dispatcher_with_node([])
+    store.record_capabilities("jarvis-core-pc", ["phone.battery", "pc.system.lock"])
+    store.record_capabilities("nothing-phone-3a", ["phone.battery"])
+    phone = store.get("nothing-phone-3a")
+    assert phone is not None
+    phone.last_seen = 0
+    store.upsert(phone)
+
+    assert dispatcher.resolve_node("phone.battery") == "jarvis-core-pc"
+    assert dispatcher.resolve_node("pc.system.lock") == "jarvis-core-pc"
+
+    store.mark_seen("nothing-phone-3a")
+    assert dispatcher.resolve_node("phone.battery") == "nothing-phone-3a"

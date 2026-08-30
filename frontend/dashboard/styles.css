@@ -48,6 +48,7 @@ aside h2 { font-size: 0.85rem; margin: 0 0 8px 0; color: var(--muted); text-tran
 #console-panel .approval-meta { color: var(--muted); margin-bottom: 6px; }
 #console-panel .approval-actions { display: flex; gap: 6px; }
 #console-panel .audit-item { font-size: 0.75em; color: var(--muted); margin-bottom: 6px; word-break: break-all; }
+#console-panel .trial-item { font-size: 0.75em; color: var(--muted); margin-bottom: 4px; list-style: none; }
 #messages { flex: 1; overflow-y: auto; height: 80%; }
 .msg-user { color: var(--accent); margin: 8px 0; }
 .msg-jarvis { color: var(--fg); margin: 8px 0; }

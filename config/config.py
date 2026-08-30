@@ -104,6 +104,12 @@ class Settings(BaseSettings):
     mqtt_password: str | None = _t("mqtt", "password", None)
     mqtt_hmac_key: str | None = _t("mqtt", "hmac_key", None)
 
+    # Trial (Priority #4 Milestone 11)
+    # ISO-8601 or unix float — events before this are excluded from trial reports.
+    trial_start_ts: float | None = None
+    # Path to JARVIS legacy_invocation_log JSONL (§3.6(2)(a) adoption proof).
+    trial_legacy_log_path: str | None = _t("trial", "legacy_log_path", None)
+
 
 settings = Settings()
 os.makedirs(settings.chroma_path, exist_ok=True)

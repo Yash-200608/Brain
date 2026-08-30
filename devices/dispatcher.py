@@ -19,6 +19,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from devices.audit import DispatchAudit
+from devices.policy import skill_dispatch_timeout
 from devices.store import DeviceStore
 from mqtt import get_mqtt_client, send_command_and_await_response
 from protocols.chimera_contract import ChimeraEnvelope
@@ -41,13 +42,24 @@ class DeviceDispatcher:
         self.audit = audit or DispatchAudit()
 
     def resolve_node(self, skill: str) -> str | None:
-        """The node to dispatch `skill` to, from live declarations only:
-        the (sorted-first) node currently declaring it. None when no node
-        declares it."""
-        declaring = sorted(
-            d.node for d in self.store.list() if d.skills and skill in d.skills
-        )
-        return declaring[0] if declaring else None
+        """The node to dispatch `skill` to, from live declarations only.
+        Prefers online nodes, then platform-appropriate ids (phone.* →
+        node id contains "phone", pc.* → contains "pc"), then stable sort."""
+        declaring = [
+            d for d in self.store.list() if d.skills and skill in d.skills
+        ]
+        if not declaring:
+            return None
+
+        online = [d for d in declaring if d.is_online()]
+        candidates = online or declaring
+
+        prefix = skill.split(".", 1)[0]
+        platform = [d for d in candidates if prefix in d.node.lower()]
+        if platform:
+            candidates = platform
+
+        return sorted(d.node for d in candidates)[0]
 
     async def dispatch(
         self,
@@ -59,8 +71,9 @@ class DeviceDispatcher:
         requester: str,
         key: str,
         approval_id: str | None = None,
-        timeout: float = 15.0,
+        timeout: float | None = None,
     ) -> DispatchOutcome:
+        wait = skill_dispatch_timeout(skill) if timeout is None else timeout
         device = self.store.get(node)
         if device is None:
             self.audit.record(
@@ -80,7 +93,7 @@ class DeviceDispatcher:
 
         client = get_mqtt_client()
         response: ChimeraEnvelope | None = await send_command_and_await_response(
-            client, node, skill, params, key, timeout=timeout
+            client, node, skill, params, key, timeout=wait
         )
         if response is None:
             self.audit.record(

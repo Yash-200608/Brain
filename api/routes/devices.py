@@ -33,6 +33,7 @@ from identity import (
     Principal,
 )
 from mqtt import get_mqtt_client, send_command_and_await_response
+from trial.report import build_trial_report
 
 router = APIRouter()
 _store = DeviceStore()
@@ -149,6 +150,19 @@ def deny_approval(approval_id: str) -> dict:
 )
 def list_audit(limit: int = 50) -> list[dict]:
     return _audit.list(limit=limit)
+
+
+@router.get(
+    "/trial-report",
+    dependencies=[Depends(require_scope(SCOPE_DEVICES_READ))],
+)
+def trial_report() -> dict:
+    """M11 trial instrumentation — spine audit aggregates plus legacy log."""
+    return build_trial_report(
+        _audit,
+        legacy_log_path=settings.trial_legacy_log_path,
+        since_ts=settings.trial_start_ts,
+    )
 
 
 @router.get(
