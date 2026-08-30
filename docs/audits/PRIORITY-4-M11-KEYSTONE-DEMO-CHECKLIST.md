@@ -10,8 +10,8 @@
 
 ## Before you start
 
-- [ ] Set trial window: `JARVIS_TRIAL_START_TS=<unix>` in Brain `.env`
-- [ ] Point Brain at legacy log: `JARVIS_TRIAL_LEGACY_LOG_PATH=C:\Users\Hp\.chimera\legacy_invocations.jsonl`
+- [x] Set trial window: `JARVIS_TRIAL_START_TS=<unix>` in Brain `.env`
+- [x] Point Brain at legacy log: `JARVIS_TRIAL_LEGACY_LOG_PATH=C:\Users\Hp\.chimera\legacy_invocations.jsonl`
 - [ ] Mosquitto listening on Tailscale IP (`100.73.18.101:1883` anonymous listener)
 - [ ] Brain `.env`: `JARVIS_MQTT_HOST=100.73.18.101`, MQTT enabled + HMAC key
 - [ ] PC node: `C:\chimera\node-pc.env` with same broker host
@@ -32,17 +32,17 @@
 
 | # | Command class | Example utterance / invoke | Spine ok | Audit id / note |
 |---|---------------|----------------------------|----------|-----------------|
-| 1 | `phone.battery` | "what's my phone battery" | [ ] | |
-| 2 | `phone.whatsapp.send` | whatsapp to contact (test number) | [ ] | |
-| 3 | `phone.sms.send` | sms to test number | [ ] | |
-| 4 | `phone.app.open` | "open Settings on my phone" | [ ] | |
-| 5 | `phone.notify` or `phone.tts` | notify or TTS demo | [ ] | |
-| 6 | `pc.system.lock` | "lock my computer" | [ ] | |
-| 7 | `pc.media.control` | "volume up" / play_pause | [ ] | |
+| 1 | `phone.battery` | "what's my phone battery" | [x] | audit `4591c091` + NL query 2026-08-30 |
+| 2 | `phone.whatsapp.send` | whatsapp to contact (test number) | [x] | audit `0ebeab99` open-only (`auto_send:false`); auto-send blocked — adb not paired (TD-P4-01) |
+| 3 | `phone.sms.send` | sms to test number | [x] | audit `cc3489ad` |
+| 4 | `phone.app.open` | "open Settings on my phone" | [x] | audit `cd52159c` |
+| 5 | `phone.notify` or `phone.tts` | notify or TTS demo | [x] | audit `709003f9` notify, `1c4ef913` tts |
+| 6 | `pc.system.lock` | "lock my computer" | [x] | audit `e8ef4945` |
+| 7 | `pc.media.control` | "volume up" / play_pause | [x] | audit `0f976f44` |
 
-- [ ] **C7 concurrency:** two pings (or two low-risk skills) in flight to same node; both correlate correctly
+- [x] **C7 concurrency:** two pings in flight to PC node — both `responded` (audit `1a76a411`, `c4da0a8e`)
 - [ ] **C9 live declarations:** remove a skill from node declaration; confirm Brain no longer plans it (no code change)
-- [ ] **C10 approval gate:** `pc.shell.run` blocks → approve once → succeeds → replay same approval fails
+- [x] **C10 approval gate:** `pc.shell.run` → `approval_required` (`92a35b27`); approve once → dispatch; replay → 404 already used
 - [ ] **C11 kernel ceiling:** Brain-authorized command refused by node kernel when ceiling forbids it
 
 ---

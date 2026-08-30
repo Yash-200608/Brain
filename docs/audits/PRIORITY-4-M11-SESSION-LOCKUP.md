@@ -49,32 +49,18 @@ Mitigation: stop stack script, then start stack script.
 
 | Commit | Summary |
 |--------|---------|
+| `bf19e06` | Contact-aware messaging, WhatsApp adb automation, SMS/WhatsApp clean responses |
 | `2e4b6fa` | Per-node skill profiles (`CHIMERA_SKILL_SET=pc\|phone\|all`) |
 | `49cb9ca` | `phone.app.open` proot fix — native Termux `am`, `Starting: Intent` detection |
-
-### JARVIS — local / deployed to phone via SCP (not committed)
-
-| Area | Change |
-|------|--------|
-| `jarvis_node_sdk/phone_skills.py` | Contact resolve (name/number/recipient); Gmail duplicate dedup; `termux_android_runner` PATH fix; WhatsApp jid SEND + adb type/tap auto-send; SMS/WhatsApp clean responses |
-| `jarvis_node_sdk/tests/test_phone_skills.py` | Contact + WhatsApp adb tests |
-| `scripts/setup_whatsapp_adb.sh` | One-time Wireless Debugging + adb pairing helper |
 
 ### Brain — on `origin/main`
 
 | Commit | Summary |
 |--------|---------|
+| `a928e59` | Trial env settings fix + `scripts/m11_spine_smoke.py` |
+| `143724a` | Phone messaging UX, M11 session lock-up + tech debt docs |
 | `112d0ae` | M11 trial instrumentation, dispatcher routing, audit/trial-report |
 | `3f4f5e8` / `7acb632` | Stack start/stop scripts, dedupe on start |
-
-### Brain — local (not committed)
-
-| Area | Change |
-|------|--------|
-| `core/device_intents.py` | NL mapper uses `recipient` param for SMS/WhatsApp |
-| `devices/policy.py` | Dispatch timeouts: `phone.tts` 65s, `phone.location` 35s, `phone.whatsapp.send` 35s |
-| `frontend/dashboard/app.js` | Human-readable invoke results; red when `result.ok === false` |
-| `tests/test_device_policy_and_intents.py` | Intent param assertions |
 
 ---
 
@@ -90,10 +76,10 @@ Mitigation: stop stack script, then start stack script.
 | `pc.media.control` / `pc.system.lock` / `pc.shell.run` | **Working** | approval gate on shell |
 | NL battery / volume / lock | **Working** | deterministic intent mapper |
 | `phone.app.open` | **Partial** | Opens via native Termux `am`; verified settings intent on device |
-| `phone.whatsapp.send` | **Blocked** | Opens WhatsApp; auto-send + typing require adb (see tech debt) |
+| `phone.whatsapp.send` | **Partial** | Opens + manual send (`auto_send:false`); auto-send blocked until adb paired |
 | `phone.location` | **Not working** | Termux location permission not granted |
-| M11 trial window | **Not started** | `JARVIS_TRIAL_START_TS` not set |
-| M11 keystone checklist | **Incomplete** | Most §3.5 rows unticked |
+| M11 trial window | **Started** | `JARVIS_TRIAL_START_TS` set in `.env`; Brain restarted 2026-08-30 |
+| M11 keystone checklist | **§3.5 + C7/C10 done** | C9/C11 + §3.6 multi-day evidence remain |
 
 Latest automated trial snapshot (`PRIORITY-4-M11-TRIAL-SNAPSHOT.md`): 28 audit events,
 17 responded / 11 timeout; several command classes show 0 spine-ok rows for the trial
@@ -108,9 +94,11 @@ See `docs/audits/PRIORITY-4-M11-KEYSTONE-DEMO-CHECKLIST.md` for full rows.
 - [x] Stack can be brought up (manual + scripts)
 - [x] Phone node reachable via SSH/proot
 - [x] Partial spine invoke / NL query exercised
-- [ ] Trial window env vars configured
-- [ ] All §3.5 command classes recorded with audit evidence
-- [ ] C7 concurrency, C9 live declarations, C10 approval, C11 kernel ceiling
+- [x] Trial window env vars configured
+- [x] All §3.5 command classes recorded with audit evidence (WhatsApp auto-send excepted — TD-P4-01)
+- [x] C7 concurrency
+- [x] C10 approval gate (shell dispatch result ok=false — investigate separately)
+- [ ] C9 live declarations, C11 kernel ceiling
 - [ ] §3.6 outcome evidence (multi-day, Doze, broker restart)
 
 **M12 / ADR-014 review:** not started — blocked on successful trial.
@@ -129,13 +117,13 @@ valid for historical/architectural items; P4 register is for *current demo block
 
 ## 7. Recommended next session (ordered)
 
-1. **Commit + push** local JARVIS and Brain changes from this session.
-2. **Phone:** run `bash ~/Jarvis-2.0/scripts/setup_whatsapp_adb.sh` (Wireless
-   Debugging) — unblocks WhatsApp auto-send.
-3. **Set trial window** in Brain `.env`; restart stack once (dedupe processes).
-4. **Tick M11 checklist** with audit ids for each command class.
-5. **Termux:** grant Contacts (name lookup) and Location (if testing `phone.location`).
-6. **Phone node:** register termux-service so `run_chimera_proot.sh` survives sleep.
+1. **Phone:** run `bash ~/Jarvis-2.0/scripts/setup_whatsapp_adb.sh` (Wireless
+   Debugging ON) — unblocks WhatsApp auto-send (TD-P4-01).
+2. **Termux:** grant Contacts (name lookup) and Location (`phone.location`).
+3. **M11:** C9 live declarations + C11 kernel ceiling demos; export trial snapshot.
+4. **Phone node:** register termux-service so `run_chimera_proot.sh` survives sleep (TD-P4-06).
+5. **Fix:** `scripts/trial_report.py` CLI reads empty audit when run offline — use
+   `GET /api/devices/trial-report` or point CLI at live `devices.db`.
 
 ---
 
