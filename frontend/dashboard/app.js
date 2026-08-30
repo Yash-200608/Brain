@@ -28,8 +28,8 @@ const APPROVER_KEY_STORAGE_KEY = "jarvis_brain_approver_key";
 // dashboard console (editable in the prompt before dispatch).
 const DEFAULT_SKILL_PARAMS = {
   "phone.tts": { text: "hello" },
-  "phone.sms.send": { phone: "+1", message: "test" },
-  "phone.whatsapp.send": { phone: "+1", message: "hi" },
+  "phone.sms.send": { recipient: "Mom", message: "test" },
+  "phone.whatsapp.send": { recipient: "Mom", message: "hi", auto_send: true },
   "phone.notify": { title: "Test", content: "message" },
   "phone.app.open": { app: "Settings" },
   "phone.torch": { on: true },
@@ -270,6 +270,39 @@ async function pingDevice(node, buttonEl, resultEl, resultKey) {
   }
 }
 
+function formatSkillResult(result) {
+  if (!result || typeof result !== "object") return String(result ?? "");
+  if (result.ok === false) return result.error || "failed";
+
+  const contact = result.resolved_contact;
+  const to = contact?.name
+    ? `${contact.name} (${contact.number || result.phone})`
+    : result.phone;
+
+  if (to && (result.message || result.note || result.sent != null)) {
+    const parts = [];
+    if (to) parts.push(`To ${to}`);
+    if (result.sent === true) parts.push("WhatsApp sent");
+    else if (result.note) parts.push(result.note);
+    else if (result.sent == null && result.phone) parts.push("SMS sent");
+    if (contact?.alternates?.length) {
+      const nums = contact.alternates.map((a) => a.number).join(", ");
+      parts.push(`other numbers: ${nums}`);
+    }
+    return parts.join(" · ");
+  }
+
+  if (result.battery?.level != null) {
+    const pct = result.battery.level;
+    const ch = result.battery.charging ? ", charging" : "";
+    return `Battery ${pct}%${ch}`;
+  }
+
+  const { ok, exit_code, stdout, stderr, ...rest } = result;
+  const compact = JSON.stringify(rest);
+  return compact === "{}" ? "Done" : compact;
+}
+
 async function invokeSkill(node, skill, buttonEl, resultEl, resultKey) {
   const defaults = DEFAULT_SKILL_PARAMS[skill] || {};
   const input = window.prompt(`Params JSON for ${skill}:`, JSON.stringify(defaults));
@@ -306,9 +339,14 @@ async function invokeSkill(node, skill, buttonEl, resultEl, resultKey) {
       loadApprovals();
       loadAudit();
     } else if (r.ok) {
+      const skillOk = body.result?.ok !== false;
       setStickyResult(
-        lastInvokeResult, resultKey, "device-result result-ok",
-        `ok: ${JSON.stringify(body.result)}`, resultEl
+        lastInvokeResult, resultKey,
+        skillOk ? "device-result result-ok" : "device-result result-bad",
+        skillOk
+          ? formatSkillResult(body.result)
+          : formatSkillResult(body.result) || `skill failed: ${JSON.stringify(body.result)}`,
+        resultEl
       );
       loadAudit();
     } else {

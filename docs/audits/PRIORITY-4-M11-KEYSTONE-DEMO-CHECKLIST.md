@@ -1,5 +1,8 @@
 # Priority #4 M11 — Keystone demo checklist
 #
+# Session lock-up (2026-08-30): docs/audits/PRIORITY-4-M11-SESSION-LOCKUP.md
+# Open breakage: docs/audits/PRIORITY-4-TECH-DEBT.md
+#
 # Run this when nodes are back online. Tick each box with evidence
 # (screenshot, audit row id, or short note). Automated partial checks:
 #   GET /api/devices/trial-report
@@ -18,7 +21,7 @@
 ### Manual stack (if script fails)
 
 1. Mosquitto service running
-2. Brain API: `uvicorn main:app --host 0.0.0.0 --port 8000` from Brain repo (venv)
+2. Brain API: `python main.py api` from Brain repo (venv) — or `.\scripts\start_chimera_stack.ps1`
 3. Dashboard: serve `frontend/dashboard` on :5173 (or open via Brain if wired)
 4. PC node: `python run_chimera_node.py` with `C:\chimera\node-pc.env`
 5. Phone node: `python run_chimera_node.py` with phone env

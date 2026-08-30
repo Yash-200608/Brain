@@ -53,7 +53,7 @@ def test_whatsapp_send_extracts_recipient_and_message() -> None:
     intent = map_device_intent("send a whatsapp to Mom that I'm running late")
     assert intent is not None
     assert intent.skill == "phone.whatsapp.send"
-    assert intent.params["phone"] == "Mom"
+    assert intent.params["recipient"] == "Mom"
     assert "running late" in intent.params["message"]
     assert intent.risk == 1
 
@@ -66,7 +66,7 @@ def test_sms_send() -> None:
     intent = map_device_intent("send an sms to +911234 that on my way")
     assert intent is not None
     assert intent.skill == "phone.sms.send"
-    assert intent.params["phone"] == "+911234"
+    assert intent.params["recipient"] == "+911234"
 
 
 def test_open_app_on_phone() -> None:

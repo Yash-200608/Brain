@@ -125,7 +125,10 @@ def _messaging_intent(skill: str, text: str) -> DeviceIntent | None:
         return None  # can't extract recipient+message deterministically -> LLM fallback
     return _intent(
         skill,
-        {"phone": m.group("recipient").strip(), "message": m.group("message").strip()},
+        {
+            "recipient": m.group("recipient").strip(),
+            "message": m.group("message").strip(),
+        },
     )
 
 
