@@ -38,12 +38,12 @@ if (-not (Test-PortListening 1883)) {
         Start-Process -FilePath $Mosquitto -ArgumentList "-c", $MosquittoConf -WindowStyle Minimized
         Start-Sleep -Seconds 2
     } else {
-        Write-Warning "Mosquitto not listening on :1883 — start the broker first"
+        Write-Warning "Mosquitto not listening on :1883 - start the broker first"
     }
 }
 
 if (-not (Test-Path $BrainVenv)) {
-    Write-Warning "Brain venv not found at $BrainVenv — using system python"
+    Write-Warning "Brain venv not found at $BrainVenv - using system python"
     $BrainVenv = "python"
 }
 
@@ -70,10 +70,10 @@ if (Test-Path $PcEnv) {
         Write-Warning "run_chimera_node.py not found at $nodeScript"
     }
 } else {
-    Write-Warning "PC node env missing: $PcEnv — run provisioning or create from Brain/.env"
+    Write-Warning "PC node env missing: $PcEnv - run provisioning or create from Brain/.env"
 }
 
 Write-Host ""
 Write-Host "Open dashboard: http://localhost:5173"
 Write-Host "Trial report:   GET http://localhost:8000/api/devices/trial-report"
-Write-Host "Phone node:     ssh to Termux, run ~/Jarvis-2.0/scripts/run_chimera_proot.sh"
+Write-Host "Phone node:     start run_chimera_proot.sh on Termux"
