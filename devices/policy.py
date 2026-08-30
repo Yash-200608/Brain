@@ -56,7 +56,7 @@ _SKILL_DISPATCH_TIMEOUT: dict[str, float] = {
     "phone.tts": 65.0,
     "phone.location": 35.0,
     "phone.ring": 70.0,
-    "phone.whatsapp.send": 35.0,
+    "phone.whatsapp.send": 120.0,
 }
 
 
